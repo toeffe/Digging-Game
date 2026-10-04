@@ -2,7 +2,7 @@
    actions: solo applies them locally, co-op routes them through the host. `ME` is this player's id. */
 const $=id=>document.getElementById(id),V3=THREE.Vector3;
 let N=100,S=20,YH=10,DEL=0,MG=40;/* yard side S (m) and half YH; N = cells per side (cell C = .2 m); MG = mow grid; DEL = how far the house and neighbours sit beyond the 20 m layout. All set by layout() */
-const C=.2,SIZES=[20,28,36],FLOOR=-5.6,KIND={tank:'a buried septic tank',iron:'an old cast-iron pipe',gas:'a gas line — careful!',well:'an old well ring'};
+const C=.2,SIZES=[20,28,36],BED=-12,VL=60,FLOOR=BED,KIND={tank:'a buried septic tank',iron:'an old cast-iron pipe',gas:'a gas line — careful!',well:'an old well ring'};/* BED..0 is the diggable block column (0.2 m cubes, 12 m deep) */
 const FIND={can:['trash',5,'a tin can'],bottle:['trash',5,'a glass bottle'],boot:['trash',10,'an old boot'],coin:['artifact',50,'a coin'],arrow:['artifact',75,'an arrowhead'],pot:['artifact',100,'a clay pot'],idol:['artifact',150,'a golden idol']};
 const FSZ={can:.08,bottle:.09,boot:.06,coin:.02,arrow:.04,pot:.07,idol:.09};/* half-height, origin at the mesh centre */
 const GEM=[null,['Quartz',25,[1.7,1.55,1.9]],['Amethyst',60,[1.5,.45,2.4]],['Emerald',120,[.3,2.1,.95]]],GEM_RATE=.07;/* name, crate value, over-bright colour; share of rocks that are gems */
@@ -33,39 +33,56 @@ class World{
    this.H[k]=this.B[k]=(.12*Math.sin(x*.35+p[0])*Math.cos(z*.3+p[1])+.05*Math.sin(x*.9+z*.7+p[2]))*f*f*(3-2*f);
    /* roots hold the soil under trees, the bin and the crate: dig weight ramps 0 -> 1 from .7r to 1.2r around each */
    for(const[ox,oz,or]of PROT){const t=Math.min(1,Math.max(0,(Math.hypot(x-ox,z-oz)/or-.7)/.5));this.PW[k]=Math.min(this.PW[k],t*t*(3-2*t))}}
+  /* solid cubes from the bedrock up to y=0. Digging clears individual blocks, so a hole keeps its walls. */
+  this.vox=new Uint8Array(N*N*VL);this.vox.fill(1);this.dirty=null;
   this.sig=[];const top={burst:.16,tank:.55,iron:.17,gas:.13,well:.5};
   const place=(kind,y)=>{let x,z,t=0;do{x=(r()-.5)*(S-5);z=(r()-.5)*(S-5)}while(t++<80&&this.sig.some(s=>Math.hypot(s.x-x,s.z-z)<5));this.sig.push({kind,x,y,z,top:top[kind],f:0,a:r()*3.14})};
-  place('burst',-3.5-r()*.4);place('tank',-1.8-r()*.5);place('iron',-1.5-r()*.5);place('gas',-1.3-r()*.5);place('well',-2.2-r()*.4);
+  place('burst',-8.8-r()*1.1);place('tank',-6.2-r()*2.2);place('iron',-5-r()*2.4);place('gas',-4.2-r()*2);place('well',-7.2-r()*1.8);
   const b=this.sig[0],a=b.a;this.burst=new V3(b.x,b.y,b.z);
   this.curve=new THREE.CatmullRomCurve3([-6,-2.5,0,2.5,6].map(s=>new V3(b.x+Math.cos(a)*s,b.y+s*.02,b.z+Math.sin(a)*s)));this.bt=.5;
-  /* trash sits shallow, artifacts deep; depth is below the local surface so nothing pokes through the lawn */
+  /* trash is a few metres down, artifacts and the mains sit much deeper in the 12 m of dirt */
   this.score=0;this.finds=[];
   const spot=()=>{let x,z,t=0;do{x=(r()-.5)*(S-3.6);z=(r()-.5)*(S-3.6)}while(++t<80&&(PROT.some(([ox,oz,or])=>Math.hypot(x-ox,z-oz)<or+1.15)||this.finds.some(q=>Math.hypot(q.x-x,q.z-z)<1.35)||this.sig.some(s=>Math.hypot(s.x-x,s.z-z)<1.5)||Math.hypot(x-MOWS[0],z-MOWS[1])<1.7||Math.hypot(x-BENCH[0],z-BENCH[1])<1.9));return[x,z]};
   const bury=(kind,d0,d1)=>{const[type,pts]=FIND[kind],[x,z]=spot();this.finds.push({kind,type,pts,sz:FSZ[kind],x,y:this.hAt(x,z)-(d0+r()*(d1-d0)),z,a:r()*6.283,held:0,done:0,out:0})};
   /* loot scales with yard area; tune here */
   const TRASH_PER_M2=1/12,ART_PER_M2=1/40,nT=Math.round(S*S*TRASH_PER_M2),nA=Math.round(S*S*ART_PER_M2);
-  for(let i=0;i<nT;i++)bury(['can','bottle','boot'][i%3],.15,1);
-  for(let i=0;i<nA;i++)bury(['coin','arrow','pot','idol','coin'][i%5],.5,2.2)}
- hAt(x,z){const u=(x+S/2)/C,v=(z+S/2)/C;let i=Math.max(0,Math.min(N-1,Math.floor(u))),j=Math.max(0,Math.min(N-1,Math.floor(v)));
-  const fu=Math.min(1,Math.max(0,u-i)),fv=Math.min(1,Math.max(0,v-j)),H=this.H,k=j*(N+1)+i;
-  return(H[k]*(1-fu)+H[k+1]*fu)*(1-fv)+(H[k+N+1]*(1-fu)+H[k+N+2]*fu)*fv}
- apply(a){if(a.type!=='dig')return;const{x,z}=a,lv=Prog.up.shovel,R=1+.1*lv,M=R+.6,P=7,W=this,L=C*1.75;
-  const ix=v=>Math.floor((v+S/2)/C);
-  for(let j=Math.max(0,ix(z-M));j<=Math.min(N,ix(z+M)+1);j++)for(let i=Math.max(0,ix(x-M));i<=Math.min(N,ix(x+M)+1);i++){const d=Math.hypot(i*C-S/2-x,j*C-S/2-z),k=j*(N+1)+i;
-   if(d<R){const t=1-d/R;W.H[k]=Math.max(FLOOR,W.H[k]-.24*(1+.33*lv)*t*t*(3-2*t)*W.PW[k]);W.D[k]=1}else if(d<M){W.H[k]+=.03*Math.sin(Math.PI*(d-R)/(M-R));W.D[k]=1}}
-  /* angle of repose: walls cave in, but a hole can stay steep enough to reach the pipe and the deep finds */
-  const i0=Math.max(1,ix(x-P)),i1=Math.min(N-1,ix(x+P)+1),j0=Math.max(1,ix(z-P)),j1=Math.min(N-1,ix(z+P)+1);
-  for(let it=0;it<6;it++)for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++){const k=j*(N+1)+i;for(const q of[k+1,k-1,k+N+1,k-N-1]){const d=W.H[k]-W.H[q];if(d>L){const m=(d-L)*.22*W.PW[k];if(m>0){W.H[k]-=m;W.H[q]+=m;W.D[k]=W.D[q]=1}}}}
-  for(let t=0;t<=N;t++)for(const e of[t,N*(N+1)+t,t*(N+1),t*(N+1)+N]){W.H[e]=W.B[e];W.D[e]=0}/* border stays flush with the outer ground */
+  for(let i=0;i<nT;i++)bury(['can','bottle','boot'][i%3],.8,3.5);
+  for(let i=0;i<nA;i++)bury(['coin','arrow','pot','idol','coin'][i%5],3.5,8.5)}
+ col(x,z){return[Math.max(0,Math.min(N-1,(x+S/2)/C|0)),Math.max(0,Math.min(N-1,(z+S/2)/C|0))]}
+ hAt(x,z){const[i,j]=this.col(x,z),base=j*N+i,vol=N*N,v=this.vox;for(let L=VL-1;L>=0;L--)if(v[L*vol+base])return BED+(L+1)*C;return BED}
+ solidAt(x,y,z){const[i,j]=this.col(x,z),L=(y-BED)/C|0;return L>=0&&L<VL&&!!this.vox[L*N*N+j*N+i]}
+ /* floor under your feet, ignoring a ceiling you have already walked beneath */
+ floorAt(x,z,feet){const[i,j]=this.col(x,z),base=j*N+i,vol=N*N,v=this.vox,max=feet+.55;let top=BED;
+  for(let L=0;L<VL;L++){if(!v[L*vol+base]||(L+1<VL&&v[(L+1)*vol+base]))continue;const t=BED+(L+1)*C;if(t>max)break;top=t}return top}
+ ceilAt(x,z,above){const[i,j]=this.col(x,z),base=j*N+i,vol=N*N,v=this.vox;
+  for(let L=0;L<VL;L++){if(!v[L*vol+base])continue;const b=BED+L*C;if(b>above)return b}return null}
+ /* player box: 0.6 m wide, h tall, feet at y. Flush faces do not count, so standing on a block is not "inside" it */
+ fits(x,feet,z,h){const HW=.3,v=this.vox,vol=N*N;
+  const i0=Math.floor((x-HW+S/2)/C),i1=Math.floor((x+HW-1e-4+S/2)/C),j0=Math.floor((z-HW+S/2)/C),j1=Math.floor((z+HW-1e-4+S/2)/C);
+  if(i0<0||j0<0||i1>=N||j1>=N)return false;
+  const L0=Math.floor((feet+1e-3-BED)/C),L1=Math.floor((feet+h-1e-3-BED)/C);if(L0<0)return false;
+  for(let L=L0;L<=Math.min(VL-1,L1);L++)for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++)if(v[L*vol+j*N+i])return false;return true}
+ room(x,feet,z){return this.fits(x,feet,z,1.8)?1.8:this.fits(x,feet,z,1.25)?1.25:0}
+ apply(a){if(a.type!=='dig')return;const{x,z}=a,lv=Prog.up.shovel,R=.62+.12*lv,steps=2+lv,W=this,vol=N*N;
+  let dx=a.dx,dy=a.dy,dz=a.dz,len=Math.hypot(dx,dy,dz);if(!isFinite(dx)||len<.01){dx=0;dy=-1;dz=0;len=1}dx/=len;dy/=len;dz/=len;
+  const y0=isFinite(a.y)?a.y:W.hAt(x,z)-.01;if(!W.dirty)W.dirty=new Set();
+  /* a short capsule along the look direction, so the shovel cuts down, sideways or up */
+  for(let s=0;s<steps;s++){const px=x+dx*(s+.35)*C,py=y0+dy*(s+.35)*C,pz=z+dz*(s+.35)*C;
+   const i0=Math.max(3,((px-R+S/2)/C)|0),i1=Math.min(N-4,((px+R+S/2)/C)|0),j0=Math.max(3,((pz-R+S/2)/C)|0),j1=Math.min(N-4,((pz+R+S/2)/C)|0);
+   const L0=Math.max(1,((py-R-BED)/C)|0),L1=Math.min(VL-1,((py+R-BED)/C)|0);/* layer 0 and a 3-block rim stay, so the pit has a floor and walls */
+   for(let L=L0;L<=L1;L++)for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++){if(W.PW[j*(N+1)+i]<.25)continue;
+    const cx=(i+.5)*C-S/2,cy=BED+(L+.5)*C,cz=(j+.5)*C-S/2;if(Math.hypot(cx-px,cy-py,cz-pz)>R)continue;
+    const idx=L*vol+j*N+i;if(!W.vox[idx])continue;W.vox[idx]=0;W.D[j*(N+1)+i]=1;
+    for(const[di,dj]of[[0,0],[-1,0],[1,0],[0,-1],[0,1]]){const ni=i+di,nj=j+dj;if(ni>=0&&nj>=0&&ni<N&&nj<N)W.dirty.add((ni>>4)+((nj>>4)<<8))}}}
   W.digs++;W.log.push(x,z)}
- exposed(){let c=0;for(let t=-.02;t<=.021;t+=.02){const p=this.curve.getPoint(this.bt+t);if(this.hAt(p.x,p.z)<p.y+.1)c++}return c>=2}
+ exposed(){let c=0;for(let t=-.02;t<=.021;t+=.02){const p=this.curve.getPoint(this.bt+t);if(!this.solidAt(p.x,p.y,p.z))c++}return c>=2}
 }
 /* ---------- renderer: gamma-correct, filmic, PBR ---------- */
 const cv=$('c'),R=new THREE.WebGLRenderer({canvas:cv,antialias:true});
 R.setPixelRatio(1);R.shadowMap.enabled=true;R.shadowMap.type=THREE.PCFSoftShadowMap;
 const lin=c=>new THREE.Color(c).convertSRGBToLinear();
 const scene=new THREE.Scene();scene.fog=new THREE.Fog(lin(0xcfe0e8),35,150);
-const cam=new THREE.PerspectiveCamera(70,1,.05,300);cam.rotation.order='YXZ';scene.add(cam);
+const cam=new THREE.PerspectiveCamera(70,1,.02,300);cam.rotation.order='YXZ';scene.add(cam);
 /* flashlight: a shadowless spot riding on the camera. Always in the scene (intensity 0 when off) so toggling never recompiles materials */
 const flash=new THREE.SpotLight(lin(0xfff0d0),0,16,.45,.7,1.2),flashT=new THREE.Object3D();flash.position.set(.12,-.1,0);flashT.position.set(0,0,-6);cam.add(flash,flashT);flash.target=flashT;
 function resize(){const pr=Math.min(devicePixelRatio,1.5),w=Math.round(innerWidth*pr),h=Math.round(innerHeight*pr);R.setSize(w,h,false);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();if(window.fxResize)fxResize(w,h)}addEventListener('resize',resize);resize();
@@ -273,12 +290,11 @@ function buildOuter(){clearGroup(outerG);PARENT=outerG;HD.n=0;HD.r=rng(21);GLASS
   else{CR.setMatrixAt(i-TN,o.matrix);CR.setColorAt(i-TN,cc.setHSL(r()<.3?.1+r()*.05:.25+r()*.07,.55,.2+r()*.1).convertSRGBToLinear())}}
  [TK,PN,CR].forEach(m=>{m.instanceMatrix.needsUpdate=true;if(m.instanceColor)m.instanceColor.needsUpdate=true;m.frustumCulled=false;PARENT.add(m)});buildOuterGrass();PARENT=scene}
 
-/* ---------- terrain ---------- */
-let tg,pos,col,NZ;/* rebuilt by buildTerrain() whenever the yard size changes */
-const terrain=new THREE.Mesh(new THREE.BufferGeometry(),new THREE.MeshStandardMaterial({vertexColors:true,map:soilTex,bumpMap:soilTex,bumpScale:3,roughness:1}));terrain.receiveShadow=terrain.castShadow=true;terrain.frustumCulled=false;scene.add(terrain);
-function buildTerrain(){if(tg)tg.dispose();tg=new THREE.PlaneGeometry(S,S,N,N).rotateX(-Math.PI/2);pos=tg.attributes.position;col=new THREE.BufferAttribute(new Float32Array(pos.count*3),3);tg.setAttribute('color',col);terrain.geometry=tg;
- soilTex.repeat.set(26*S/20,26*S/20);/* same texel density at every size */
- NZ=new Float32Array(pos.count);for(let j=0;j<=N;j++)for(let i=0;i<=N;i++)NZ[j*(N+1)+i]=Math.abs(Math.sin(i*12.9898+j*78.233)*43758.5453)%1}
+/* ---------- voxel yard: exposed cube faces, remeshed per 16×16 chunk ---------- */
+let NZ;
+const voxMat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.95,side:THREE.DoubleSide}),voxG=new THREE.Group(),chunks=new Map();voxG.frustumCulled=false;scene.add(voxG);
+function buildTerrain(){for(const m of chunks.values()){m.geometry.dispose();voxG.remove(m)}chunks.clear();
+ soilTex.repeat.set(1,1);NZ=new Float32Array(N*N);for(let j=0;j<N;j++)for(let i=0;i<N;i++)NZ[j*N+i]=Math.abs(Math.sin(i*12.9898+j*78.233)*43758.5453)%1}
 let world;const L2=v=>v*v*1.6,SC=[0,0,0];
 /* soil colour by depth below the original surface (shared by terrain + dig particles); writes into SC */
 function soilRGB(d,n){let r,g,b;
@@ -288,12 +304,30 @@ function soilRGB(d,n){let r,g,b;
   else if(d<3.5){const s=Math.sin(d*11)*.03+n*.04;r=.5+s;g=.46+s;b=.4+s}
   else{r=.3+n*.04;g=.32+n*.04;b=.35+n*.04}
   SC[0]=r;SC[1]=g;SC[2]=b}
-function sync(){const W=world;
- for(let j=0;j<=N;j++)for(let i=0;i<=N;i++){const k=j*(N+1)+i,h=W.H[k],d=W.B[k]-h,n=NZ[k];let r,g,b;
-  if(!W.D[k]&&d<.05){const lf=Math.sin(i*.17)*Math.cos(j*.13);r=.2+.07*n+.03*lf;g=.4+.12*n+.06*lf;b=.12+.04*n}
-  else{soilRGB(d,n);r=SC[0];g=SC[1];b=SC[2]}
-  const ao=1-Math.min(Math.max(d,0),4)*.13;pos.setY(k,h);col.setXYZ(k,L2(r*ao),L2(g*ao),L2(b*ao))}
- pos.needsUpdate=col.needsUpdate=true;tg.computeVertexNormals();tg.computeBoundingSphere()}
+function voxCol(i,j,layer,top,sky){const n=NZ[j*N+i],d=(VL-1-layer)*C;let r,g,b;
+ if(layer===0){r=.28+n*.03;g=.29+n*.03;b=.32+n*.03}/* bedrock, so the bottom of a hole is a floor */
+ else if(top&&sky&&!world.D[j*(N+1)+i]&&layer===VL-1){const lf=Math.sin(i*.17)*Math.cos(j*.13);r=.22+.07*n+.03*lf;g=.42+.1*n+.05*lf;b=.14+.03*n}
+ else{soilRGB(d,n);r=SC[0];g=SC[1];b=SC[2]}
+ const ao=1-Math.min(d,8)*.05,shade=sky?(top?1:.62):Math.max(.06,.16-d*.008);/* under a roof the dirt is cave-dark; open pits stay lit */
+ return[L2(r*ao*shade),L2(g*ao*shade),L2(b*ao*shade)]}
+function buildChunk(id){const i0=(id&255)<<4,j0=(id>>8)<<4,i1=Math.min(N,i0+16),j1=Math.min(N,j0+16),vol=N*N,v=world.vox,P=[],Nm=[],Co=[];
+ const solid=(i,j,L)=>i>=0&&j>=0&&i<N&&j<N&&L>=0&&L<VL&&!!v[L*vol+j*N+i];/* outside is empty, so the rim draws a real wall down to the bedrock */
+ const tri=(ax,ay,az,bx,by,bz,cx,cy,cz,nx,ny,nz,r,g,b)=>{P.push(ax,ay,az,bx,by,bz,cx,cy,cz);Nm.push(nx,ny,nz,nx,ny,nz,nx,ny,nz);Co.push(r,g,b,r,g,b,r,g,b)};
+ const quad=(a,b,c,d,nx,ny,nz,col)=>{(tri(...a,...b,...c,nx,ny,nz,...col),tri(...a,...c,...d,nx,ny,nz,...col))};
+ for(let j=j0;j<j1;j++)for(let i=i0;i<i1;i++){const x0=i*C-S/2,z0=j*C-S/2,x1=x0+C,z1=z0+C;
+  for(let L=0;L<VL;L++){if(!solid(i,j,L))continue;let sky=true;for(let a=L+1;a<VL;a++)if(solid(i,j,a)){sky=false;break}const y0=BED+L*C,y1=y0+C;
+   if(!solid(i,j,L+1)){const c=voxCol(i,j,L,1,sky);quad([x0,y1,z0],[x0,y1,z1],[x1,y1,z1],[x1,y1,z0],0,1,0,c)}
+   if(L>0&&!solid(i,j,L-1)){const c=voxCol(i,j,L,0,sky);quad([x0,y0,z0],[x1,y0,z0],[x1,y0,z1],[x0,y0,z1],0,-1,0,c)}
+   if(!solid(i+1,j,L)){const c=voxCol(i,j,L,0,sky);quad([x1,y0,z0],[x1,y1,z0],[x1,y1,z1],[x1,y0,z1],1,0,0,c)}
+   if(!solid(i-1,j,L)){const c=voxCol(i,j,L,0,sky);quad([x0,y0,z1],[x0,y1,z1],[x0,y1,z0],[x0,y0,z0],-1,0,0,c)}
+   if(!solid(i,j+1,L)){const c=voxCol(i,j,L,0,sky);quad([x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1],0,0,1,c)}
+   if(!solid(i,j-1,L)){const c=voxCol(i,j,L,0,sky);quad([x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0],0,0,-1,c)}}}
+ let m=chunks.get(id);if(!P.length){if(m){m.geometry.dispose();voxG.remove(m);chunks.delete(id)}return}
+ const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(P,3));g.setAttribute('normal',new THREE.Float32BufferAttribute(Nm,3));g.setAttribute('color',new THREE.Float32BufferAttribute(Co,3));g.computeBoundingSphere();
+ if(!m){m=new THREE.Mesh(g,voxMat);m.castShadow=m.receiveShadow=true;voxG.add(m);chunks.set(id,m)}else{m.geometry.dispose();m.geometry=g}}
+function sync(all){const W=world;if(!W||!W.vox)return;
+ if(all||!W.dirty){W.dirty=new Set();for(let j=0;j<N;j+=16)for(let i=0;i<N;i+=16)W.dirty.add((i>>4)+((j>>4)<<8))}
+ for(const id of W.dirty)buildChunk(id);W.dirty.clear()}
 
 /* ---------- grass, buried rocks, buried objects ---------- */
 const GNMAX=Math.round(26000*36*36/400);let GN=26000;/* blades on the mowable lawn: 65 per m2, buffers sized for the largest yard */
@@ -333,7 +367,7 @@ function buildOuterGrass(){{const B=2*(YH+13.5),ON=Math.round(40000*(27*YH+182)/
   fm.setColorAt(n,gc.setHSL(.21+r()*.07,.55,.24+r()*.16).convertSRGBToLinear());n++}
  fm.instanceMatrix.needsUpdate=fm.instanceColor.needsUpdate=true;PARENT.add(fm)}}
 function clearGrass(x,z){let ch=0;go.position.set(0,-50,0);go.rotation.set(0,0,0);go.scale.setScalar(0);go.updateMatrix();
- for(let n=0;n<GN;n++){const q=gp[n];if(q.gone||Math.abs(q.x-x)>7||Math.abs(q.z-z)>7)continue;if(Math.hypot(q.x-x,q.z-z)<1.75||Math.abs(world.hAt(q.x,q.z)-q.y)>.05){q.gone=1;grass.setMatrixAt(n,go.matrix);ch=1}}if(ch)grass.instanceMatrix.needsUpdate=true}
+ for(let n=0;n<GN;n++){const q=gp[n];if(q.gone||Math.abs(q.x-x)>4||Math.abs(q.z-z)>4)continue;if(Math.abs(world.hAt(q.x,q.z)-q.y)>.05){q.gone=1;grass.setMatrixAt(n,go.matrix);ch=1}}if(ch)grass.instanceMatrix.needsUpdate=true}
 const rockG=(()=>{const g=new THREE.IcosahedronGeometry(1,1),p=g.attributes.position;
  for(let i=0;i<p.count;i++){const x=p.getX(i),y=p.getY(i),z=p.getZ(i),k=.82+.18*Math.sin(x*4.1+y*2.3)*Math.cos(z*3.7-y*1.9)+.1*Math.sin(x*9.3+z*7.1+y*5.2);p.setXYZ(i,x*k,y*k*.85,z*k)}
  g.computeVertexNormals();return g})();
@@ -341,11 +375,11 @@ const RNMAX=Math.round(700*36*36/400);let RN=700;/* buried rocks: 1.75 per m2 */
 const rocks=new THREE.InstancedMesh(rockG,mat(0xffffff,{roughness:.95}),RNMAX);rocks.castShadow=rocks.receiveShadow=true;scene.add(rocks);rocks.setColorAt(0,new THREE.Color());
 const rk=[];
 function setRock(n){const q=rk[n];go.position.set(q.x,q.y,q.z);go.rotation.set(q.a,q.b,q.c);go.scale.set(q.s*q.w,q.s,q.s*q.w);go.updateMatrix();rocks.setMatrixAt(n,go.matrix)}
-function buildRocks(){const r=rng(world.seed+2);rk.length=0;for(let n=0;n<RN;n++){const s=.07+Math.pow(r(),3)*.5;rk.push({x:(r()-.5)*(S-1),y:-.15-Math.pow(r(),1.3)*3.4,z:(r()-.5)*(S-1),a:r()*6,b:r()*6,c:r()*6,s,w:1+r()*.6});setRock(n);rocks.setColorAt(n,gc.setHSL(.08+r()*.05,.12+r()*.1,.25+r()*.3).convertSRGBToLinear())}
+function buildRocks(){const r=rng(world.seed+2);rk.length=0;for(let n=0;n<RN;n++){const s=.07+Math.pow(r(),3)*.5;rk.push({x:(r()-.5)*(S-1),y:-.8-Math.pow(r(),1.15)*8.2,z:(r()-.5)*(S-1),a:r()*6,b:r()*6,c:r()*6,s,w:1+r()*.6});setRock(n);rocks.setColorAt(n,gc.setHSL(.08+r()*.05,.12+r()*.1,.25+r()*.3).convertSRGBToLinear())}
  /* a few small rocks are gems (own RNG stream so the rock layout is unchanged): over-bright colour, so they glow through the bloom */
  const g=rng(world.seed+3);for(let n=0;n<RN;n++){const q=rk[n],a=g(),b=g();q.gem=0;if(a<GEM_RATE&&q.s<=.3){q.s=Math.max(q.s,.1);q.gem=b<.6?1:b<.9?2:3;setRock(n);rocks.setColorAt(n,gc.setRGB(...GEM[q.gem][2]))}}
  rocks.instanceMatrix.needsUpdate=rocks.instanceColor.needsUpdate=true}
-function settleRocks(x,z){let ch=0;for(let n=0;n<RN;n++){const q=rk[n];if(q.held||Math.abs(q.x-x)>9||Math.abs(q.z-z)>9)continue;const h=world.hAt(q.x,q.z);if(q.y>h+q.s*.2){q.y=h+q.s*.3;setRock(n);ch=1}}if(ch)rocks.instanceMatrix.needsUpdate=true}
+function settleRocks(x,z){let ch=0;for(let n=0;n<RN;n++){const q=rk[n];if(q.held||Math.abs(q.x-x)>9||Math.abs(q.z-z)>9||world.solidAt(q.x,q.y,q.z))continue;q.y=world.floorAt(q.x,q.z,q.y+.5)+q.s*.3;setRock(n);ch=1}if(ch)rocks.instanceMatrix.needsUpdate=true}
 let pipeG;
 function buildBuried(){if(pipeG)scene.remove(pipeG);pipeG=new THREE.Group();const add=(m,x,y,z)=>{m.position.set(x,y,z);m.castShadow=m.receiveShadow=true;pipeG.add(m);return m};
  const cu=mat(0xc2733a,{roughness:.4,metalness:.35}),rust=mat(0x6a2f12);
@@ -362,7 +396,7 @@ function buildBuried(){if(pipeG)scene.remove(pipeG);pipeG=new THREE.Group();cons
  scene.add(pipeG)}
 
 /* buried finds: hidden until the soil above them is gone, then they sit on the hole floor */
-function syncFind(f){if(f.done||f.held){f.m.visible=false;return}const h=world.hAt(f.x,f.z);if(f.out||f.y+f.sz>=h-.02){f.out=1;f.y=h+f.sz}f.m.position.set(f.x,f.y,f.z);f.m.rotation.set(0,f.a,0);f.m.visible=!!f.out}
+function syncFind(f){if(f.done||f.held){f.m.visible=false;return}if(f.out||!world.solidAt(f.x,f.y,f.z)){f.out=1;const floor=world.floorAt(f.x,f.z,f.y+.4);if(f.y<floor+f.sz)f.y=floor+f.sz}f.m.position.set(f.x,f.y,f.z);f.m.rotation.set(0,f.a,0);f.m.visible=!!f.out}
 function findOut(f){return !f.done&&!f.held&&!!f.out}
 function settleFinds(x,z){for(const f of world.finds){if(f.done||f.held||Math.abs(f.x-x)>7||Math.abs(f.z-z)>7)continue;syncFind(f)}}
 let findG;
@@ -441,10 +475,20 @@ const pg=new THREE.IcosahedronGeometry(.07,0),waterM=new THREE.MeshBasicMaterial
 /* dig-particle material matching the layer at depth d (d<0 = grass tuft); cached by layer colour bucket */
 function soilMat(d,n){const gr=d<0;if(!gr)soilRGB(d,n);const sh=.8+.35*Math.random(),r=gr?.2:SC[0],g=gr?.42:SC[1],b=gr?.12:SC[2],key=gr?'g'+(Math.random()*3|0):[r,g,b].map(v=>Math.round(v*sh*12)).join();
  return pmc[key]||(pmc[key]=new THREE.MeshStandardMaterial({color:new THREE.Color(L2(r*sh*.8),L2(g*sh*.8),L2(b*sh*.8)),roughness:1}))}
-function digDepth(x,z){const k=Math.max(0,Math.min(N,Math.round((z+S/2)/C)))*(N+1)+Math.max(0,Math.min(N,Math.round((x+S/2)/C)));return{d:world.B[k]-world.H[k],n:NZ[k]}}
+function digDepth(x,z){const[i,j]=world.col(x,z);return{d:Math.max(0,-world.hAt(x,z)),n:NZ[j*N+i]}}
+/* grid walk from the eye; the first solid cube is what the shovel hits, from any direction */
+function rayVox(ox,oy,oz,dx,dy,dz,maxD){const v=world.vox,vol=N*N,mod=(n,m)=>((n%m)+m)%m;
+ let i=Math.floor((ox+S/2)/C),j=Math.floor((oz+S/2)/C),L=Math.floor((oy-BED)/C),t=0;
+ const sx=Math.sign(dx)||0,sy=Math.sign(dy)||0,sz=Math.sign(dz)||0;
+ const dtx=sx?C/Math.abs(dx):1e9,dty=sy?C/Math.abs(dy):1e9,dtz=sz?C/Math.abs(dz):1e9;
+ const span=(f,s)=>!s?1e9:(s>0?(f?C-f:C):f||0);
+ let tx=span(mod(ox+S/2,C),sx)/ (sx?Math.abs(dx):1), ty=span(mod(oy-BED,C),sy)/(sy?Math.abs(dy):1), tz=span(mod(oz+S/2,C),sz)/(sz?Math.abs(dz):1);
+ if(!sx)tx=1e9;if(!sy)ty=1e9;if(!sz)tz=1e9;
+ for(let n=0;n<128&&t<=maxD;n++){if(i>=0&&i<N&&j>=0&&j<N&&L>=0&&L<VL&&v[L*vol+j*N+i])return{x:ox+dx*t,y:oy+dy*t,z:oz+dz*t};
+  if(tx<=ty&&tx<=tz){i+=sx;t=tx;tx+=dtx}else if(ty<=tz){L+=sy;t=ty;ty+=dty}else{j+=sz;t=tz;tz+=dtz}}return null}
 function spawn(p,v,life,w,sm,sc){if(parts.length>520)return;const m=new THREE.Mesh(pg,w?waterM:sm);m.scale.setScalar(sc!=null?sc:(w?.7:.6+Math.random()*1.1));m.position.copy(p);m.castShadow=!w;scene.add(m);parts.push({m,v,life,w})}
 function stepParts(dt){for(let i=parts.length-1;i>=0;i--){const q=parts[i],P=q.m.position;q.life-=dt;q.v.y-=(q.w?7:11)*dt;P.addScaledVector(q.v,dt);
- const g=world.hAt(P.x,P.z);if(P.y<g&&!q.w){P.y=g;q.v.set(0,0,0)}if(q.life<=0||(q.w&&P.y<g)){scene.remove(q.m);parts.splice(i,1)}}}
+ const g=world.floorAt(P.x,P.z,P.y);if(P.y<g&&!q.w){P.y=g;q.v.set(0,0,0)}if(q.life<=0||(q.w&&P.y<g)){scene.remove(q.m);parts.splice(i,1)}}}
 
 /* ---------- audio (synthesized) ---------- */
 let AC,NB,hissG;
@@ -593,7 +637,7 @@ function fxRender(){
 resize();
 
 /* ---------- game ---------- */
-let state='intro',stepD=0,paused=false,locked=false,fallback=false,dragging=false,moved=0,px=0,pz=6,ey=1.7,yaw=0,pitch=-.35,aim=null,cd=0,pc=0,swing=0,holding=false,heldT=0,autoDug=false,geyser=false,elapsed=0,hudT=0,T=0,toastT=0,last=performance.now();
+let state='intro',stepD=0,paused=false,locked=false,fallback=false,dragging=false,moved=0,px=0,py=0,pz=6,ey=1.7,pvx=0,pvy=0,pvz=0,yaw=0,pitch=-.35,aim=null,digDir=new V3(0,0,-1),cd=0,pc=0,swing=0,holding=false,heldT=0,autoDug=false,geyser=false,elapsed=0,hudT=0,T=0,toastT=0,last=performance.now();
 const keys={},free=(x,z)=>obst.every(o=>Math.hypot(x-o.x,z-o.z)>o.r+.3);
 function show(id){document.querySelectorAll('.scr').forEach(e=>e.classList.toggle('show',e.id===id))}
 function toast(t){const e=$('toast');e.textContent=t;e.style.opacity=1;toastT=3.5}
@@ -603,7 +647,7 @@ function setYardSize(s){if(!SIZES.includes(s))s=SIZES[0];if(yardBuilt&&s===S)ret
  layout(s);GN=Math.round(26000*s*s/400);RN=Math.round(700*s*s/400);grass.count=GN;rocks.count=RN;mown=new Uint8Array(MG*MG);
  houseG.position.z=-DEL;porchL.position.set(1.4,2,-9.2-DEL);benchL.position.set(BENCH[0]+.7,2.1,BENCH[1]+.5);
  buildTerrain();buildYard();buildOuter();yardBuilt=true}
-function newGame(seed,size){Prog=freshProg();flashOn=false;sel=want=0;swapK=0;saveProg();/* every new yard starts from scratch: 80 points, no upgrades */setYardSize(size||(yardBuilt?S:wantSize));world=new World(seed==null?rndSeed():seed);Net.reset();glReset();dayT=DAY0;buildBuried();buildRocks();dropCarry(true);buildFinds();sync();buildGrass();placeMower();parts.forEach(q=>scene.remove(q.m));parts.length=0;rings.forEach(q=>scene.remove(q.m));rings.length=0;geyser=false;px=0;pz=YH-4;yaw=0;pitch=-.35;ey=world.hAt(0,pz)+1.7;pc=0;elapsed=0;setShop(false);hudPts();$('tm').textContent='0:00'}
+function newGame(seed,size){Prog=freshProg();flashOn=false;sel=want=0;swapK=0;saveProg();/* every new yard starts from scratch: 80 points, no upgrades */setYardSize(size||(yardBuilt?S:wantSize));world=new World(seed==null?rndSeed():seed);Net.reset();glReset();dayT=DAY0;buildBuried();buildRocks();dropCarry(true);buildFinds();sync(true);buildGrass();placeMower();parts.forEach(q=>scene.remove(q.m));parts.length=0;rings.forEach(q=>scene.remove(q.m));rings.length=0;geyser=false;px=0;pz=YH-4;yaw=0;pitch=-.35;py=world.hAt(0,pz);ey=py+1.7;pvx=pvy=pvz=0;pc=0;elapsed=0;setShop(false);hudPts();$('tm').textContent='0:00'}
 function lock(){try{cv.requestPointerLock()}catch(e){}setTimeout(()=>{fallback=!document.pointerLockElement},250)}
 let seenHelp=false;try{seenHelp=localStorage.getItem('burstHelp')==='1'}catch(e){}
 function startPlay(seed,size){audio();state='play';newGame(seed,size||wantSize);$('hud').style.display='block';sh.visible=true;
@@ -619,14 +663,15 @@ function lampKey(){if(!Prog.up.lamps){toast('Buy garden lights at the workbench'
  if(!aim){toast('Aim at the ground to set a light down');return}
  if(Math.hypot(aim.x-SOCK[0],aim.z-SOCK[1])>CABLE_MAX){toast(`Too far — the cable only reaches ${CABLE_MAX} m from the socket`);return}
  Net.send({type:'lamp_place',i:fi,x:aim.x,z:aim.z,by:ME})}
-function tryDig(){if(state!=='play'||paused||!aim||cd>0||Math.abs(aim.x)>YH-1.4||Math.abs(aim.z)>YH-1.4||handsBusy())return;if(!isMown(aim.x,aim.z)){toast('Mow the grass first');return}
+function tryDig(){if(state!=='play'||paused||!aim||cd>0||Math.abs(aim.x)>YH-1.4||Math.abs(aim.z)>YH-1.4||handsBusy())return;
+ if(aim.y>-.3&&!isMown(aim.x,aim.z)){toast('Mow the grass first');return}/* only the lawn surface needs mowing; a wall or ceiling is already open */
  if(!canSee()){toast(Prog.up.lantern?'Too dark to dig — press L for your flashlight':'Too dark to dig — buy a flashlight at the workbench');return}cd=.8;swing=1;
  for(let i=0;i<GLN;i++){const q=GS[i];if(!q||q.cut!=null)continue;const c=cabSeg(aim.x,aim.z,i);if(c.d<.4){Net.send({type:'cable_cut',i,t:c.t,by:ME});break}}/* the shovel goes through the cable */
- Net.send({type:'dig',x:aim.x,z:aim.z,by:ME})}
+ const d=digDir,q=v=>Math.round(v*1000)/1000;Net.send({type:'dig',x:aim.x,y:aim.y,z:aim.z,dx:q(d.x),dy:q(d.y),dz:q(d.z),by:ME})}
 /* E: drop what you're holding, else grab the mower, else the nearest exposed rock, else a find */
 function useE(){if(state!=='play'||paused)return;audio();
  if(shopOpen){setShop(false);return}
- if(mowerHeld){Net.flushMow();Net.send({type:'mower_drop',x:mower.position.x,z:mower.position.z,ry:mower.rotation.y,on:mowerOn?1:0,by:ME});return}
+ if(mowerHeld){Net.flushMow();Net.send({type:'mower_drop',x:mower.position.x,z:mower.position.z,ry:mower.rotation.y,on:mowerOn?1:0,fy:py,by:ME});return}
  if(carry>=0){if(Math.hypot(px-CRATE[0],pz-CRATE[1])<2.5){if(rk[carry].gem)Net.send({type:'rock_sell',n:carry,by:ME});else toast('Just a plain rock — not worth anything');return}
   if(aim)Net.send({type:'rock_place',n:carry,x:aim.x,z:aim.z,by:ME});else toast('Aim at the ground to put it down');return}
  if(carryF>=0){const f=world.finds[carryF],db=Math.hypot(px-BIN[0],pz-BIN[1]),dc=Math.hypot(px-CRATE[0],pz-CRATE[1]);
@@ -637,7 +682,7 @@ function useE(){if(state!=='play'||paused)return;audio();
  if(Math.hypot(px-BENCH[0],pz-BENCH[1])<3.2){setShop(true);return}
  if(Math.hypot(px-mower.position.x,pz-mower.position.z)<2.2){if(mowerOwner)toast('Someone else is using the mower');else Net.send({type:'mower_grab',by:ME});return}
  const dir=new V3(0,0,-1).applyQuaternion(cam.quaternion);let best=-1,bd=2.4;
- for(let n=0;n<RN;n++){const q=rk[n];if(q.held)continue;const h=world.hAt(q.x,q.z);if(q.y+q.s*.4<h)continue;/* still buried */
+ for(let n=0;n<RN;n++){const q=rk[n];if(q.held||world.solidAt(q.x,q.y,q.z))continue;/* still buried */
   const d=Math.hypot(q.x-px,q.z-pz);if(d>3.5||d>=bd)continue;if(new V3(q.x-px,q.y+q.s*.4-ey,q.z-pz).normalize().dot(dir)<.6)continue;best=n;bd=d}
  if(best>=0){if(rk[best].s>.32){toast('Too heavy');return}Net.send({type:'rock_pick',n:best,by:ME});return}
  best=-1;bd=2.4;
@@ -651,12 +696,12 @@ function probe(){if(state!=='play'||paused||pc>0)return;const pl=Prog.up.probe,n
  addRing(px,pz,Math.sqrt(Math.max(.04,dn*dn-dp*dp)))}
 Net.on(a=>{
  if(a.type==='find_pick'){const f=world.finds[a.n];if(!f||f.done)return;f.held=a.by;f.m.visible=false;if(a.by===ME){holdFind(a.n);toast(`${FIND[f.kind][2]} — ${f.type==='trash'?'take it to the trashcan':'take it to the crate'}`)}return}
- if(a.type==='find_place'){const f=world.finds[a.n];f.held=0;f.out=1;f.x=a.x;f.z=a.z;f.y=world.hAt(a.x,a.z)+f.sz;syncFind(f);if(a.by===ME&&carryF===a.n)clearCarryF();return}
+ if(a.type==='find_place'){const f=world.finds[a.n];f.held=0;f.out=1;f.x=a.x;f.z=a.z;f.y=world.floorAt(a.x,a.z,1)+f.sz;syncFind(f);if(a.by===ME&&carryF===a.n)clearCarryF();return}
  if(a.type==='find_deposit'){const f=world.finds[a.n];if(!f||f.done)return;f.done=1;f.held=0;f.m.visible=false;world.score+=f.pts;Prog.bank+=f.pts;hudPts();saveProg();if(a.by===ME){if(carryF===a.n)clearCarryF();toast(`+${f.pts}`);f.type==='trash'?clank():ping()}return}
  if(a.type==='rock_pick'){const q=rk[a.n];q.held=a.by;go.position.set(0,-50,0);go.scale.setScalar(0);go.updateMatrix();rocks.setMatrixAt(a.n,go.matrix);rocks.instanceMatrix.needsUpdate=true;
   if(a.by===ME){carry=a.n;carryM.scale.set(q.s*q.w,q.s,q.s*q.w);carryM.material.color.fromArray(rocks.instanceColor.array,a.n*3);if(q.gem)toast(`${GEM[q.gem][0]}! Take it to the crate`)}}
  if(a.type==='rock_sell'){const q=rk[a.n];if(!q||!q.gem||q.held==='$')return;const pts=GEM[q.gem][1];q.held='$';go.position.set(0,-50,0);go.scale.setScalar(0);go.updateMatrix();rocks.setMatrixAt(a.n,go.matrix);rocks.instanceMatrix.needsUpdate=true;world.score+=pts;Prog.bank+=pts;hudPts();saveProg();if(a.by===ME){if(carry===a.n)carry=-1;toast(`${GEM[q.gem][0]} sold  +${pts}`);ping()}return}
- if(a.type==='rock_place'){const q=rk[a.n];q.held=0;q.x=a.x;q.z=a.z;q.y=world.hAt(a.x,a.z)+q.s*.3;setRock(a.n);rocks.instanceMatrix.needsUpdate=true;if(a.by===ME&&carry===a.n)carry=-1;return}
+ if(a.type==='rock_place'){const q=rk[a.n];q.held=0;q.x=a.x;q.z=a.z;q.y=world.floorAt(a.x,a.z,1)+q.s*.3;setRock(a.n);rocks.instanceMatrix.needsUpdate=true;if(a.by===ME&&carry===a.n)carry=-1;return}
  if(a.type==='buy'){const u=UPG[a.id],c=upCost(a.id);Prog.bank-=c;Prog.up[a.id]++;hudPts();saveProg();
   if(a.by===ME){ping();toast(`${u.n} upgraded to level ${Prog.up[a.id]}`)}else toast(`Team bought ${u.n} level ${Prog.up[a.id]}`);return}
  if(a.type==='lamp_place'){glPlace(a.i,a.x,a.z);if(a.by===ME){clank();toast(GS.every((q,i)=>q||i>=Prog.up.lamps)?'Light placed — E at the wall socket switches it on':'Light placed')}return}
@@ -666,7 +711,7 @@ Net.on(a=>{
  if(a.type==='bank_add'){Prog.bank+=a.n;hudPts();saveProg();if(a.by===ME){ping();toast(`DEV: +${a.n} points`)}return}
  if(a.type==='lamp_power'){glOn=!!a.on;if(a.by===ME)ping();toast(glOn?'Garden lights on':'Garden lights off');return}
  if(a.type==='mower_grab'){mowerOwner=a.by;if(a.by===ME){mowerHeld=true;mowX=undefined;mh=yaw}return}
- if(a.type==='mower_drop'){mowerOwner=null;mowerTarget=null;mower.position.set(a.x,world.hAt(a.x,a.z),a.z);mower.rotation.y=a.ry;mowerOn=!!a.on;if(a.by===ME)mowerHeld=false;return}
+ if(a.type==='mower_drop'){mowerOwner=null;mowerTarget=null;mower.position.set(a.x,world.floorAt(a.x,a.z,a.fy!=null?a.fy:1),a.z);mower.rotation.y=a.ry;mowerOn=!!a.on;if(a.by===ME)mowerHeld=false;return}
  if(a.type==='mow'){if(a.by!==ME){let ch=0;for(const ci of a.cells)if(ci>=0&&ci<MG*MG&&!mown[ci]){mown[ci]=1;cutCell(ci);ch=1}if(ch)grass.instanceMatrix.needsUpdate=true}return}
  if(a.type==='win'){win();return}
  if(a.type==='new_yard'){const was=state!=='play';newGame(a.seed,a.size);state='play';$('hud').style.display='block';sh.visible=true;
@@ -675,7 +720,7 @@ Net.on(a=>{
  for(let i=0;i<18;i++){const px2=a.x+(Math.random()-.5)*.6,pz2=a.z+(Math.random()-.5)*.6,q=digDepth(px2,pz2),dd=q.d-Math.random()*.2;
   spawn(new V3(px2,y+.1,pz2),new V3((Math.random()-.5)*3,2.5+Math.random()*3,(Math.random()-.5)*3),1.6,false,soilMat(dd<.05&&Math.random()<.4?-1:Math.max(0,dd),q.n))}
  if(a.by===ME)thud();if(state!=='play')return;
- for(const s of world.sig.slice(1))if(!s.f&&world.hAt(s.x,s.z)<s.y+s.top+.05){s.f=1;toast(`That's ${KIND[s.kind]} — not the leak. Keep probing.`);nz('lowpass',500,.4,.9);grain(6,.15,'bandpass',2500,6000,.25)}
+ for(const s of world.sig.slice(1))if(!s.f&&!world.solidAt(s.x,s.y,s.z)){s.f=1;toast(`That's ${KIND[s.kind]} — not the leak. Keep probing.`);nz('lowpass',500,.4,.9);grain(6,.15,'bandpass',2500,6000,.25)}
  if(world.exposed()){if(Net.mode==='solo')win();else if(Net.mode==='host')Net.send({type:'win'})}});/* co-op: only the host calls it, so everyone wins together */
 function win(){state='won';geyser=true;nz('bandpass',1800,2.5,.7);sweep('lowpass',400,80,2.5,.6);
  const m=Math.floor(elapsed/60),s=Math.floor(elapsed%60),ft=world.finds.filter(f=>f.done&&f.type==='trash').length,fa=world.finds.filter(f=>f.done&&f.type==='artifact').length;
@@ -687,7 +732,7 @@ function flashKey(){if(!Prog.up.lantern)toast('Buy a flashlight at the workbench
 /* left click: use whatever the hotbar has in hand */
 function useItem(){if(sel!==want)return;if(sel===0)tryDig();else if(sel===1)probe();else if(!handsBusy()){if(sel===2)flashKey();else if(sel===3)lampKey()}}
 addEventListener('wheel',e=>{if(state!=='play'||paused||shopOpen)return;const d=e.deltaY>0?1:-1;let i=want;for(let k=0;k<HB.length;k++){i=(i+d+HB.length)%HB.length;if(HB[i].ok())break}hbSelect(i)},{passive:true});
-addEventListener('keydown',e=>{keys[e.code]=true;if(state==='intro'){state='menu';audio();show(menuScr());return}if(e.code==='KeyF')probe();if(e.code==='KeyE'&&!e.repeat)useE();
+addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='Space'&&state==='play')e.preventDefault();if(state==='intro'){state='menu';audio();show(menuScr());return}if(e.code==='KeyF')probe();if(e.code==='KeyE'&&!e.repeat)useE();
  if(state!=='play'||paused||e.repeat)return;
  if(e.code==='KeyL')flashKey();
  if(!shopOpen&&/^(Digit|Numpad)[1-4]$/.test(e.code))hbSelect(+e.code.slice(-1)-1);
@@ -712,16 +757,35 @@ for(const id of['bNew2','bNew3'])$(id).onclick=()=>{if(Net.mode==='client')retur
  if(state==='play'){paused=false;show(null);newGame(undefined,wantSize);if(!fallback)lock()}else startPlay()};
 for(const id of['bMenu','bMenu2','bMenu3'])$(id).onclick=toMenu;
 
+function moveBody(dt,K){
+ const sp=(K.ShiftLeft?6.2:4.3)*BSPD[Prog.up.boots],f=(K.KeyW||K.ArrowUp?1:0)-(K.KeyS||K.ArrowDown?1:0),s=(K.KeyD?1:0)-(K.KeyA?1:0);
+ let x=px,y=py,z=pz;
+ if(!world.room(x,y,z)){for(let i=1;i<=16;i++)if(world.room(x,y+i*.05,z)){y+=i*.05;pvy=0;break}}
+ const ground=pvy<=0&&!world.room(x,y-.06,z);
+ let wx=0,wz=0;if(f||s){const dx=-Math.sin(yaw)*f+Math.cos(yaw)*s,dz=-Math.cos(yaw)*f-Math.sin(yaw)*s,l=Math.hypot(dx,dz)||1;wx=dx/l*sp;wz=dz/l*sp}
+ const ak=Math.min(1,dt*(ground?20:(f||s?6:1.5)));pvx+=(wx-pvx)*ak;pvz+=(wz-pvz)*ak;
+ if(ground&&K.Space&&!shopOpen)pvy=8.6;else pvy=Math.max(-35,pvy-32*dt);
+ const slide=(x,y,z,dx,dz)=>{let nx=x,nz=z;if(dx&&world.room(x+dx,y,z)&&free(x+dx,z))nx=x+dx;if(dz&&world.room(nx,y,z+dz)&&free(nx,z+dz))nz=z+dz;return{x:nx,y,z:nz}};
+ const stepUp=(x,y,z,dx,dz)=>{const a=slide(x,y,z,dx,dz);if(!ground||(a.x===x+dx&&a.z===z+dz))return a;
+  const STEP=.6;if(!world.room(x,y+STEP,z))return a;const b=slide(x,y+STEP,z,dx,dz);
+  if(Math.hypot(b.x-x,b.z-z)<=Math.hypot(a.x-x,a.z-z)+1e-4)return a;
+  let lo=y,hi=y+STEP;if(!world.room(b.x,y,b.z)){for(let k=0;k<8;k++){const m=(lo+hi)/2;if(world.room(b.x,m,b.z))hi=m;else lo=m}}else hi=y;
+  return world.room(b.x,hi,b.z)?{x:b.x,y:hi,z:b.z}:a};
+ let mx=pvx*dt,mz=pvz*dt;const n=Math.max(1,Math.ceil(Math.hypot(mx,mz)/.1));
+ for(let i=0;i<n;i++){const m=stepUp(x,y,z,mx/n,mz/n);x=m.x;y=m.y;z=m.z}
+ const ny=y+pvy*dt;
+ if(pvy<0){if(world.room(x,ny,z))y=ny;else{let lo=ny,hi=y;for(let k=0;k<10;k++){const m=(lo+hi)/2;if(world.room(x,m,z))hi=m;else lo=m}y=hi;pvy=0}}
+ else if(pvy>0){if(world.room(x,ny,z))y=ny;else{let lo=y,hi=ny;for(let k=0;k<10;k++){const m=(lo+hi)/2;if(world.room(x,m,z))lo=m;else hi=m}y=lo;pvy=0}}
+ const h=world.room(x,y,z)||1.8,want=y+(h>=1.8?1.7:h-.12);
+ px=x;py=y;pz=z;ey=want<ey?want:ey+(want-ey)*Math.min(1,dt*8)}
 /* ---------- loop ---------- */
 function play(dt){
- const K=keys,ox=px,oz=pz,f=(K.KeyW||K.ArrowUp?1:0)-(K.KeyS||K.ArrowDown?1:0),s=(K.KeyD?1:0)-(K.KeyA?1:0);
- if(!paused){if(f||s){const sp=(K.ShiftLeft?6.5:4)*dt*BSPD[Prog.up.boots],dx=-Math.sin(yaw)*f+Math.cos(yaw)*s,dz=-Math.cos(yaw)*f-Math.sin(yaw)*s,l=Math.hypot(dx,dz),nx=px+dx/l*sp,nz2=pz+dz/l*sp;
-   if(free(nx,pz)&&Math.abs(nx)<YH-.7)px=nx;if(free(px,nz2)&&nz2>-(YH-.8)&&nz2<YH-.7)pz=nz2}
+ const K=keys,ox=px,oz=pz;
+ if(!paused){moveBody(dt,K);
   if(state==='play')elapsed+=dt;stepD+=Math.hypot(px-ox,pz-oz);if(stepD>(K.ShiftLeft?2:1.5)){stepD=0;stepSnd()}}
- ey+=(world.hAt(px,pz)+1.7-ey)*Math.min(1,dt*10);
  cam.position.set(px,ey,pz);cam.rotation.set(pitch,yaw,0);cam.updateMatrixWorld();
- const dir=new V3(0,0,-1).applyQuaternion(cam.quaternion),p=new V3();aim=null;
- for(let t=.3;t<7;t+=.07){p.copy(cam.position).addScaledVector(dir,t);const g=world.hAt(p.x,p.z);if(p.y<g){aim=new V3(p.x,g,p.z);break}}
+ const dir=new V3(0,0,-1).applyQuaternion(cam.quaternion);digDir.copy(dir);aim=null;
+ const hit=rayVox(cam.position.x,cam.position.y,cam.position.z,dir.x,dir.y,dir.z,4.2);if(hit)aim=new V3(hit.x,hit.y,hit.z);
  cd-=dt;
  /* holding left mouse = keep digging at the tool's max rate (fallback drag mode: only while the cursor stays still) */
  if(holding&&sel===0&&want===0&&state==='play'&&!paused){heldT+=dt;if(locked)tryDig();else if(dragging&&moved<6&&heldT>.3){const c0=cd;tryDig();if(cd>c0)autoDug=true}}
@@ -740,10 +804,10 @@ function play(dt){
  /* mower: pushed 1.2 m ahead while held, otherwise it rests on the ground; the engine cuts grass and throws clippings */
  if(mowerHeld){/* the deck is heavy: it follows your view at a limited turn rate, so whipping the mouse around doesn't sweep it across the lawn */
   let d=yaw-mh;d-=Math.round(d/6.2832)*6.2832;mh+=Math.max(-MTURN*dt,Math.min(MTURN*dt,d));
-  const fx=-Math.sin(mh),fz=-Math.cos(mh),mx=px+fx*1.6,mz=pz+fz*1.6;mower.position.set(mx,world.hAt(mx,mz),mz);mower.rotation.y=mh+Math.PI}
+  const fx=-Math.sin(mh),fz=-Math.cos(mh),mx=px+fx*1.6,mz=pz+fz*1.6;mower.position.set(mx,world.floorAt(mx,mz,py),mz);mower.rotation.y=mh+Math.PI}
  else{if(mowerOwner&&mowerTarget){/* someone else is pushing it: glide to their last reported spot */
    const k=Math.min(1,dt*12),m=mower.position;m.x+=(mowerTarget.x-m.x)*k;m.z+=(mowerTarget.z-m.z)*k;let d=mowerTarget.ry-mower.rotation.y;d-=Math.round(d/6.2832)*6.2832;mower.rotation.y+=d*k}
-  mower.position.y+=(world.hAt(mower.position.x,mower.position.z)-mower.position.y)*Math.min(1,dt*10)}
+  mower.position.y+=(world.floorAt(mower.position.x,mower.position.z,mower.position.y+.2)-mower.position.y)*Math.min(1,dt*10)}
  if(mowerOn){const mx=mower.position.x,mz=mower.position.z;
  if(mowerHeld){/* only the owner cuts; everyone else gets the cut cells from the host */
   if(mowX===undefined){mowX=mx;mowZ=mz}const steps=Math.max(1,Math.ceil(Math.hypot(mx-mowX,mz-mowZ)/.25));
