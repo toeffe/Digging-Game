@@ -2,10 +2,10 @@
    actions: solo applies them locally, co-op routes them through the host. `ME` is this player's id. */
 const $=id=>document.getElementById(id),V3=THREE.Vector3;
 let N=100,S=20,YH=10,DEL=0,MG=40;/* yard side S (m) and half YH; N = cells per side (cell C = .2 m); MG = mow grid; DEL = how far the house and neighbours sit beyond the 20 m layout. All set by layout() */
-const C=.2,SIZES=[20,28,36],BED=-12,VL=60,FLOOR=BED,KIND={tank:'a buried septic tank',iron:'an old cast-iron pipe',gas:'a gas line — careful!',well:'an old well ring'};/* BED..0 is the diggable block column (0.2 m cubes, 12 m deep) */
+const C=.2,SIZES=[20,28,36],BED=-12,VL=60,FLOOR=BED,KIND={tank:'a buried septic tank',iron:'an old cast-iron pipe',gas:'a gas line — careful!',well:'an old well ring'},SCRAP={tank:4,iron:3,gas:2,well:3};/* BED..0 is the diggable block column (0.2 m cubes, 12 m deep). SCRAP is the junk value of a decoy once it is uncovered */
 const FIND={can:['trash',5,'a tin can'],bottle:['trash',5,'a glass bottle'],boot:['trash',10,'an old boot'],coin:['artifact',50,'a coin'],arrow:['artifact',75,'an arrowhead'],pot:['artifact',100,'a clay pot'],idol:['artifact',150,'a golden idol']};
 const FSZ={can:.08,bottle:.09,boot:.06,coin:.02,arrow:.04,pot:.07,idol:.09};/* half-height, origin at the mesh centre */
-const GEM=[null,['Quartz',25,[1.7,1.55,1.9]],['Amethyst',60,[1.5,.45,2.4]],['Emerald',120,[.3,2.1,.95]]],GEM_RATE=.07;/* name, crate value, over-bright colour; share of rocks that are gems */
+const GEM=[null,['Quartz',25,[1.7,1.55,1.9]],['Amethyst',60,[1.5,.45,2.4]],['Emerald',120,[.3,2.1,.95]]],GEM_RATE=.07,ROCK_PTS=1;/* name, crate value, over-bright colour; share of rocks that are gems. A plain rock is worth ROCK_PTS */
 const BIN=[-9,3],CRATE=[9,4],BENCH=[-1.75,-9.5],BENCH0=[-1.75,-9.5],MOWS=[2.4,-7.4],TREES=[],PROT=[];/* BENCH0 = bench in the house's own frame; MOWS = mower parking spot */
 const TREE0=[[-8,-6,1.4],[8.3,-4,1.1],[-7.6,6.5,1.2],[-4,-7.5,1.2],[5,7.5,1.3],[.5,3,1],[-6,1.5,1.1],[3,-8,1.2],[7,.5,1]];/* x, z, scale at the 20 m size (first 3 always, more as the yard grows) */
 function layout(s){S=s;N=s*5;YH=s/2;DEL=YH-10;MG=s*2;const k=YH/10;
@@ -198,7 +198,7 @@ function buildFence(){/* picket fence on all four sides; the house closes the fo
  box(1.5,2.7,.14,0xf2efe8,0,1.35,-9.96);box(1.2,2.5,.16,0x5a3a22,0,1.25,-9.93,{map:wood});
  for(const py of[.8,1.75])for(const px of[-.28,.28])box(.4,.8,.03,0x4a2e1a,px,py,-9.84,{map:wood});
  cyl(.04,.04,.06,0xd8b24a,.42,1.2,-9.82,{metalness:.8,roughness:.3}).rotation.x=Math.PI/2;
- box(2.2,.1,1,0x6e3a2e,0,3.05,-9.5);for(const bx of[-1,1])box(.08,.55,.08,0xf2efe8,bx,2.75,-9.55);
+ box(2.2,.1,1,0x6e3a2e,0,3.05,-9.5);for(const sx of[-1,1]){const dy=.66,dz=.9,len=Math.hypot(dz,dy),m=box(.08,.08,len,0xf2efe8,sx,2.34+dy/2,-10.02+dz/2);m.rotation.x=-Math.atan2(dy,dz)}
  box(1.9,.15,.7,0xa7a39a,0,.075,-9.65);
  box(.14,.25,.14,0x222222,1.4,2.2,-9.9);box(.1,.14,.1,0xfff2c0,1.4,2.2,-9.84,{emissive:0xffe9a0,emissiveIntensity:1.5});
  /* workbench against the house wall: the shop (E). Lamp glows at night. Built in the house's own frame (BENCH0); BENCH is where it ends up. */
@@ -213,7 +213,7 @@ function buildFence(){/* picket fence on all four sides; the house closes the fo
  /* clamp lamp bolted to the top of the backboard: post, arm, shade, bulb */
  cyl(.015,.015,.36,0x333840,bx+.55,2.1,bz-.37);cyl(.015,.015,.3,0x333840,bx+.55,2.28,bz-.22).rotation.x=Math.PI/2;cyl(.03,.09,.07,0x333840,bx+.55,2.24,bz-.07);
  const bulb=new THREE.Mesh(new THREE.SphereGeometry(.05,10,8),new THREE.MeshBasicMaterial({color:new THREE.Color(5,4,2.4)}));bulb.position.set(bx+.55,2.17,bz-.07);PARENT.add(bulb);LAMPS.push(bulb.material);
- const sign=new THREE.Mesh(new THREE.PlaneGeometry(1.3,.34),new THREE.MeshStandardMaterial({roughness:.85,map:cvTex(260,68,(x,w,h)=>{x.fillStyle='#3a2a1c';x.fillRect(0,0,w,h);x.strokeStyle='#e9a23b';x.lineWidth=4;x.strokeRect(5,5,w-10,h-10);x.fillStyle='#e9a23b';x.font='bold 36px Georgia,serif';x.textAlign='center';x.textBaseline='middle';x.fillText('WORKBENCH',w/2,h/2+2)})}));
+ const sign=new THREE.Mesh(new THREE.PlaneGeometry(1.46,.34),new THREE.MeshStandardMaterial({roughness:.85,map:cvTex(292,68,(x,w,h)=>{x.fillStyle='#3a2a1c';x.fillRect(0,0,w,h);x.strokeStyle='#e9a23b';x.lineWidth=4;x.strokeRect(6,5,w-12,h-10);x.fillStyle='#e9a23b';x.font='bold 36px Georgia,serif';x.textAlign='center';x.textBaseline='middle';x.fillText('WORKBENCH',w/2,h/2+2)})}));sign.material.map.wrapS=sign.material.map.wrapT=THREE.ClampToEdgeWrapping;
  sign.position.set(bx,2.45,-9.96);sign.castShadow=true;PARENT.add(sign);
 }
 PARENT=scene;const G0=GLASS.length,L0=LAMPS.length;/* house windows and bench bulb; the outer world adds more after these and is rebuilt per size */
@@ -387,12 +387,12 @@ function buildBuried(){if(pipeG)scene.remove(pipeG);pipeG=new THREE.Group();cons
  for(const t of[.1,.3,.5,.7,.9]){const r=add(new THREE.Mesh(new THREE.TorusGeometry(.17,.035,8,16),cu),0,0,0);r.position.copy(world.curve.getPoint(t));r.quaternion.setFromUnitVectors(new V3(0,0,1),world.curve.getTangent(t))}
  const bp=world.burst,cr=add(new THREE.Mesh(new THREE.TorusGeometry(.2,.05,8,16),rust),bp.x,bp.y,bp.z);cr.quaternion.setFromUnitVectors(new V3(0,0,1),world.curve.getTangent(world.bt));
  add(new THREE.Mesh(new THREE.IcosahedronGeometry(.12,1),new THREE.MeshBasicMaterial({color:0x080402})),bp.x,bp.y+.14,bp.z).scale.set(1.2,.35,1);
- for(const s of world.sig.slice(1)){let m;
-  if(s.kind==='tank'){m=new THREE.Mesh(new THREE.BoxGeometry(1.6,1.1,2.4),mat(0x8a8a84));add(new THREE.Mesh(new THREE.CylinderGeometry(.35,.35,.15,16),mat(0x6d6d68)),s.x,s.y+.6,s.z)}
+ for(const s of world.sig.slice(1)){s.ms=[];const keep=m=>s.ms.push(m);let m;
+  if(s.kind==='tank'){m=new THREE.Mesh(new THREE.BoxGeometry(1.6,1.1,2.4),mat(0x8a8a84));keep(add(new THREE.Mesh(new THREE.CylinderGeometry(.35,.35,.15,16),mat(0x6d6d68)),s.x,s.y+.6,s.z))}
   else if(s.kind==='iron'){m=new THREE.Mesh(new THREE.CylinderGeometry(.17,.17,3.2,12),mat(0x3a302a,{roughness:.6,metalness:.3}));m.rotation.set(0,s.a,Math.PI/2)}
   else if(s.kind==='gas'){m=new THREE.Mesh(new THREE.CylinderGeometry(.13,.13,3.2,12),mat(0xd8b42a,{roughness:.5}));m.rotation.set(0,s.a,Math.PI/2)}
   else m=new THREE.Mesh(new THREE.CylinderGeometry(.75,.75,1,20,1,true),mat(0x8d8a82,{side:THREE.DoubleSide}));
-  add(m,s.x,s.y,s.z)}
+  keep(add(m,s.x,s.y,s.z))}
  scene.add(pipeG)}
 
 /* buried finds: hidden until the soil above them is gone, then they sit on the hole floor */
@@ -672,7 +672,9 @@ function tryDig(){if(state!=='play'||paused||!aim||cd>0||Math.abs(aim.x)>YH-1.4|
 function useE(){if(state!=='play'||paused)return;audio();
  if(shopOpen){setShop(false);return}
  if(mowerHeld){Net.flushMow();Net.send({type:'mower_drop',x:mower.position.x,z:mower.position.z,ry:mower.rotation.y,on:mowerOn?1:0,fy:py,by:ME});return}
- if(carry>=0){if(Math.hypot(px-CRATE[0],pz-CRATE[1])<2.5){if(rk[carry].gem)Net.send({type:'rock_sell',n:carry,by:ME});else toast('Just a plain rock — not worth anything');return}
+ if(carry>=0){const q=rk[carry],nc=Math.hypot(px-CRATE[0],pz-CRATE[1])<2.5,nb=Math.hypot(px-BIN[0],pz-BIN[1])<2.5;
+  if(q.gem&&nc||!q.gem&&(nc||nb)){Net.send({type:'rock_sell',n:carry,by:ME});return}
+  if(q.gem&&nb){toast('That belongs in the crate');return}
   if(aim)Net.send({type:'rock_place',n:carry,x:aim.x,z:aim.z,by:ME});else toast('Aim at the ground to put it down');return}
  if(carryF>=0){const f=world.finds[carryF],db=Math.hypot(px-BIN[0],pz-BIN[1]),dc=Math.hypot(px-CRATE[0],pz-CRATE[1]);
   if(db<2.5||dc<2.5){const at=db<=dc?'bin':'crate';if(at===(f.type==='trash'?'bin':'crate'))Net.send({type:'find_deposit',n:carryF,by:ME});else toast(f.type==='trash'?'That belongs in the trashcan':'That belongs in the crate');return}
@@ -681,6 +683,7 @@ function useE(){if(state!=='play'||paused)return;audio();
  if(Math.hypot(px-SOCK[0],pz-SOCK[1])<2.6){if(!Prog.up.lamps)toast('No lights yet — buy some at the workbench');else Net.send({type:'lamp_power',on:glOn?0:1,by:ME});return}
  if(Math.hypot(px-BENCH[0],pz-BENCH[1])<3.2){setShop(true);return}
  if(Math.hypot(px-mower.position.x,pz-mower.position.z)<2.2){if(mowerOwner)toast('Someone else is using the mower');else Net.send({type:'mower_grab',by:ME});return}
+ for(let i=1;i<world.sig.length;i++){const s=world.sig[i];if(!s.f||s.sold||Math.hypot(px-s.x,py-s.y,pz-s.z)>2.8)continue;Net.send({type:'scrap',n:i,by:ME});return}
  const dir=new V3(0,0,-1).applyQuaternion(cam.quaternion);let best=-1,bd=2.4;
  for(let n=0;n<RN;n++){const q=rk[n];if(q.held||world.solidAt(q.x,q.y,q.z))continue;/* still buried */
   const d=Math.hypot(q.x-px,q.z-pz);if(d>3.5||d>=bd)continue;if(new V3(q.x-px,q.y+q.s*.4-ey,q.z-pz).normalize().dot(dir)<.6)continue;best=n;bd=d}
@@ -695,12 +698,13 @@ function probe(){if(state!=='play'||paused||pc>0)return;const pl=Prog.up.probe,n
  const dp=(gy-bs.y)*(1+(Math.random()-.5)*.1*nf),dn=bd*(1+(Math.random()-.5)*.14*nf)+(Math.random()-.5)*.3*nf;
  addRing(px,pz,Math.sqrt(Math.max(.04,dn*dn-dp*dp)))}
 Net.on(a=>{
- if(a.type==='find_pick'){const f=world.finds[a.n];if(!f||f.done)return;f.held=a.by;f.m.visible=false;if(a.by===ME){holdFind(a.n);toast(`${FIND[f.kind][2]} — ${f.type==='trash'?'take it to the trashcan':'take it to the crate'}`)}return}
+ if(a.type==='find_pick'){const f=world.finds[a.n];if(!f||f.done)return;f.held=a.by;f.m.visible=false;if(a.by===ME){holdFind(a.n);toast(`${FIND[f.kind][2]} — ${f.pts} pts at the ${f.type==='trash'?'trashcan':'crate'}`)}return}
  if(a.type==='find_place'){const f=world.finds[a.n];f.held=0;f.out=1;f.x=a.x;f.z=a.z;f.y=world.floorAt(a.x,a.z,1)+f.sz;syncFind(f);if(a.by===ME&&carryF===a.n)clearCarryF();return}
  if(a.type==='find_deposit'){const f=world.finds[a.n];if(!f||f.done)return;f.done=1;f.held=0;f.m.visible=false;world.score+=f.pts;Prog.bank+=f.pts;hudPts();saveProg();if(a.by===ME){if(carryF===a.n)clearCarryF();toast(`+${f.pts}`);f.type==='trash'?clank():ping()}return}
  if(a.type==='rock_pick'){const q=rk[a.n];q.held=a.by;go.position.set(0,-50,0);go.scale.setScalar(0);go.updateMatrix();rocks.setMatrixAt(a.n,go.matrix);rocks.instanceMatrix.needsUpdate=true;
-  if(a.by===ME){carry=a.n;carryM.scale.set(q.s*q.w,q.s,q.s*q.w);carryM.material.color.fromArray(rocks.instanceColor.array,a.n*3);if(q.gem)toast(`${GEM[q.gem][0]}! Take it to the crate`)}}
- if(a.type==='rock_sell'){const q=rk[a.n];if(!q||!q.gem||q.held==='$')return;const pts=GEM[q.gem][1];q.held='$';go.position.set(0,-50,0);go.scale.setScalar(0);go.updateMatrix();rocks.setMatrixAt(a.n,go.matrix);rocks.instanceMatrix.needsUpdate=true;world.score+=pts;Prog.bank+=pts;hudPts();saveProg();if(a.by===ME){if(carry===a.n)carry=-1;toast(`${GEM[q.gem][0]} sold  +${pts}`);ping()}return}
+  if(a.by===ME){carry=a.n;carryM.scale.set(q.s*q.w,q.s,q.s*q.w);carryM.material.color.fromArray(rocks.instanceColor.array,a.n*3);toast(q.gem?`${GEM[q.gem][0]}! ${GEM[q.gem][1]} pts at the crate`:`Plain rock — ${ROCK_PTS} pt at the crate or the trashcan`)}}
+ if(a.type==='rock_sell'){const q=rk[a.n];if(!q||q.held==='$')return;const pts=q.gem?GEM[q.gem][1]:ROCK_PTS;q.held='$';go.position.set(0,-50,0);go.scale.setScalar(0);go.updateMatrix();rocks.setMatrixAt(a.n,go.matrix);rocks.instanceMatrix.needsUpdate=true;world.score+=pts;Prog.bank+=pts;hudPts();saveProg();if(a.by===ME){if(carry===a.n)carry=-1;toast(q.gem?`${GEM[q.gem][0]} sold  +${pts}`:`Plain rock  +${pts}`);q.gem?ping():clank()}return}
+ if(a.type==='scrap'){const s=world.sig[a.n];if(!s||s.kind==='burst'||!s.f||s.sold)return;s.sold=1;if(s.ms)s.ms.forEach(m=>m.visible=false);const pts=SCRAP[s.kind]||2;world.score+=pts;Prog.bank+=pts;hudPts();saveProg();if(a.by===ME){toast(`Scrapped  +${pts}`);clank()}return}
  if(a.type==='rock_place'){const q=rk[a.n];q.held=0;q.x=a.x;q.z=a.z;q.y=world.floorAt(a.x,a.z,1)+q.s*.3;setRock(a.n);rocks.instanceMatrix.needsUpdate=true;if(a.by===ME&&carry===a.n)carry=-1;return}
  if(a.type==='buy'){const u=UPG[a.id],c=upCost(a.id);Prog.bank-=c;Prog.up[a.id]++;hudPts();saveProg();
   if(a.by===ME){ping();toast(`${u.n} upgraded to level ${Prog.up[a.id]}`)}else toast(`Team bought ${u.n} level ${Prog.up[a.id]}`);return}
@@ -720,7 +724,7 @@ Net.on(a=>{
  for(let i=0;i<18;i++){const px2=a.x+(Math.random()-.5)*.6,pz2=a.z+(Math.random()-.5)*.6,q=digDepth(px2,pz2),dd=q.d-Math.random()*.2;
   spawn(new V3(px2,y+.1,pz2),new V3((Math.random()-.5)*3,2.5+Math.random()*3,(Math.random()-.5)*3),1.6,false,soilMat(dd<.05&&Math.random()<.4?-1:Math.max(0,dd),q.n))}
  if(a.by===ME)thud();if(state!=='play')return;
- for(const s of world.sig.slice(1))if(!s.f&&!world.solidAt(s.x,s.y,s.z)){s.f=1;toast(`That's ${KIND[s.kind]} — not the leak. Keep probing.`);nz('lowpass',500,.4,.9);grain(6,.15,'bandpass',2500,6000,.25)}
+ for(const s of world.sig.slice(1))if(!s.f&&!world.solidAt(s.x,s.y,s.z)){s.f=1;toast(`That's ${KIND[s.kind]} — not the leak. Press E to scrap it for ${SCRAP[s.kind]} pts.`);nz('lowpass',500,.4,.9);grain(6,.15,'bandpass',2500,6000,.25)}
  if(world.exposed()){if(Net.mode==='solo')win();else if(Net.mode==='host')Net.send({type:'win'})}});/* co-op: only the host calls it, so everyone wins together */
 function win(){state='won';geyser=true;nz('bandpass',1800,2.5,.7);sweep('lowpass',400,80,2.5,.6);
  const m=Math.floor(elapsed/60),s=Math.floor(elapsed%60),ft=world.finds.filter(f=>f.done&&f.type==='trash').length,fa=world.finds.filter(f=>f.done&&f.type==='artifact').length;

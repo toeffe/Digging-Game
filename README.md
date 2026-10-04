@@ -29,7 +29,7 @@ A full day lasts 10 minutes and about 3.5 of them are night. It is too dark to d
 
 ## Yard size, loot and gems
 
-Pick Small (20 m), Medium (28 m) or Large (36 m) before starting; the choice is remembered, and in co-op the host's choice applies to everyone. Bigger yards hold more buried loot (about 1 trash per 12 m² and 1 artifact per 40 m²). A successful probe draws a ring on the ground; cooldown fills the probe slot on the hotbar. About 1 in 15 small rocks is a glowing gem (quartz, amethyst, emerald): carry it to the crate to sell it. Plain rocks are worthless.
+Pick Small (20 m), Medium (28 m) or Large (36 m) before starting; the choice is remembered, and in co-op the host's choice applies to everyone. Bigger yards hold more buried loot (about 1 trash per 12 m² and 1 artifact per 40 m²). A successful probe draws a ring on the ground; cooldown fills the probe slot on the hotbar. About 1 in 15 small rocks is a glowing gem (quartz, amethyst, emerald): carry it to the crate to sell it. A plain rock is worth 1 point at the crate or the trashcan. An uncovered decoy (tank, old pipe, gas line, well) can be scrapped on the spot for 2–4 points.
 
 ## Co-op (2-4 players)
 
