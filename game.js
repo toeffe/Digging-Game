@@ -1,12 +1,30 @@
 /* ARCHITECTURE: World = seeded deterministic state, mutated only by apply(action). Net (net.js) validates, stamps and broadcasts
    actions: solo applies them locally, co-op routes them through the host. `ME` is this player's id. */
 const $=id=>document.getElementById(id),V3=THREE.Vector3;
-const N=100,S=20,C=S/N,FLOOR=-5.6,KIND={tank:'a buried septic tank',iron:'an old cast-iron pipe',gas:'a gas line — careful!',well:'an old well ring'};
+let N=100,S=20,YH=10,DEL=0,MG=40;/* yard side S (m) and half YH; N = cells per side (cell C = .2 m); MG = mow grid; DEL = how far the house and neighbours sit beyond the 20 m layout. All set by layout() */
+const C=.2,SIZES=[20,28,36],FLOOR=-5.6,KIND={tank:'a buried septic tank',iron:'an old cast-iron pipe',gas:'a gas line — careful!',well:'an old well ring'};
 const FIND={can:['trash',5,'a tin can'],bottle:['trash',5,'a glass bottle'],boot:['trash',10,'an old boot'],coin:['artifact',50,'a coin'],arrow:['artifact',75,'an arrowhead'],pot:['artifact',100,'a clay pot'],idol:['artifact',150,'a golden idol']};
 const FSZ={can:.08,bottle:.09,boot:.06,coin:.02,arrow:.04,pot:.07,idol:.09};/* half-height, origin at the mesh centre */
-const BIN=[-9,3],CRATE=[9,4];
+const GEM=[null,['Quartz',25,[1.7,1.55,1.9]],['Amethyst',60,[1.5,.45,2.4]],['Emerald',120,[.3,2.1,.95]]],GEM_RATE=.07;/* name, crate value, over-bright colour; share of rocks that are gems */
+const BIN=[-9,3],CRATE=[9,4],BENCH=[-1.75,-9.5],BENCH0=[-1.75,-9.5],MOWS=[2.4,-7.4],TREES=[],PROT=[];/* BENCH0 = bench in the house's own frame; MOWS = mower parking spot */
+const TREE0=[[-8,-6,1.4],[8.3,-4,1.1],[-7.6,6.5,1.2],[-4,-7.5,1.2],[5,7.5,1.3],[.5,3,1],[-6,1.5,1.1],[3,-8,1.2],[7,.5,1]];/* x, z, scale at the 20 m size (first 3 always, more as the yard grows) */
+function layout(s){S=s;N=s*5;YH=s/2;DEL=YH-10;MG=s*2;const k=YH/10;
+ BIN[0]=-(YH-1);BIN[1]=3*k;CRATE[0]=YH-1;CRATE[1]=4*k;BENCH[0]=BENCH0[0];BENCH[1]=BENCH0[1]-DEL;SOCK[1]=SOCK0[1]-DEL;MOWS[1]=-7.4-DEL;
+ TREES.length=0;TREE0.slice(0,3+Math.round((s-20)/16*6)).forEach(([x,z,t])=>TREES.push([x*k,z*k,t]));
+ HFP=HFP0.map((a,i)=>[a[0]+HOFF[i][0]*DEL,a[1]+HOFF[i][1]*DEL,a[2],a[3],a[4]]);
+ PROT.length=0;TREES.forEach(([x,z,t])=>PROT.push([x,z,.78*t]));PROT.push([BIN[0],BIN[1],.6],[CRATE[0],CRATE[1],.9],[BENCH[0],BENCH[1],.9])}/* x, z, protect radius for trees, bin, crate, workbench */
 function rng(s){return()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
-const PROT=[[-8,-6,1.1],[8.3,-4,.9],[-7.6,6.5,1],[BIN[0],BIN[1],.6],[CRATE[0],CRATE[1],.9]];/* x, z, protect radius for trees, bin, crate */
+/* ---------- progression: a points bank + team upgrades (survive "New yard"; solo saves them to localStorage) ---------- */
+const UPG={shovel:{n:'Shovel',max:3,cost:[120,200,300],d:'Deeper, wider digs'},probe:{n:'Probe',max:2,cost:[100,180],d:'Longer range, faster recharge, less noise'},lantern:{n:'Flashlight',max:2,cost:[80,160],d:'Lets you dig at night (L). Lv2: brighter'},mower:{n:'Mower',max:2,cost:[60,120],d:'Wider mowing strip: 0.6 → 1.3 → 2 m'},boots:{n:'Boots',max:2,cost:[60,120],d:'Walk and sprint faster'},lamps:{n:'Garden lights',max:4,cost:[70,90,110,130],d:'One more lamp on a cable from the wall socket (G to place)'}},UKEY=Object.keys(UPG),
+ PCD=[2.5,2,1.5],PRNG=[13,17,22],MRAD=[.3,.65,1],BSPD=[1,1.15,1.3];/* per-level probe recharge, probe range, mower radius, walk speed */
+const freshProg=()=>({bank:0,up:{shovel:0,probe:0,lantern:0,mower:0,boots:0,lamps:0}}),upCost=id=>{const l=Prog.up[id];return l<UPG[id].max?UPG[id].cost[l]:Infinity};
+let Prog=freshProg(),shopOpen=false,pcMax=2.5,flashOn=false;
+function saveProg(){}/* nothing is kept between yards any more; hook left in place for the callers */
+function renderShop(){$('shopList').innerHTML=UKEY.map((id,i)=>{const u=UPG[id],l=Prog.up[id],mx=l>=u.max,c=upCost(id);return`<li class="${mx?'mx':c>Prog.bank?'no':''}"><b>${i+1}</b> ${u.n} <i>Lv ${l}/${u.max}</i><span>${mx?'MAX':c}</span><small>${u.d}</small></li>`}).join('');$('shopBank').textContent=Prog.bank}
+function setShop(v){shopOpen=v;$('shop').style.display=v?'block':'none';if(v)renderShop()}
+/* testing helpers (F9 = +100 points, Shift+F9 = +1000): only on localhost / file:// or with ?dev in the URL */
+const DEV=/^(localhost|127\.0\.0\.1|\[::1\]|)$/.test(location.hostname)||/[?&]dev\b/.test(location.search);
+function hudPts(){$('sc').textContent=Prog.bank;if(shopOpen)renderShop();hbShow()}
 class World{
  constructor(seed){this.seed=seed;const r=rng(seed),n=(N+1)**2,p=[r()*6,r()*6,r()*6];
   this.H=new Float32Array(n);this.B=new Float32Array(n);this.D=new Uint8Array(n);this.PW=new Float32Array(n).fill(1);this.digs=0;this.log=[];
@@ -16,23 +34,25 @@ class World{
    /* roots hold the soil under trees, the bin and the crate: dig weight ramps 0 -> 1 from .7r to 1.2r around each */
    for(const[ox,oz,or]of PROT){const t=Math.min(1,Math.max(0,(Math.hypot(x-ox,z-oz)/or-.7)/.5));this.PW[k]=Math.min(this.PW[k],t*t*(3-2*t))}}
   this.sig=[];const top={burst:.16,tank:.55,iron:.17,gas:.13,well:.5};
-  const place=(kind,y)=>{let x,z,t=0;do{x=(r()-.5)*15;z=(r()-.5)*15}while(t++<80&&this.sig.some(s=>Math.hypot(s.x-x,s.z-z)<5));this.sig.push({kind,x,y,z,top:top[kind],f:0,a:r()*3.14})};
+  const place=(kind,y)=>{let x,z,t=0;do{x=(r()-.5)*(S-5);z=(r()-.5)*(S-5)}while(t++<80&&this.sig.some(s=>Math.hypot(s.x-x,s.z-z)<5));this.sig.push({kind,x,y,z,top:top[kind],f:0,a:r()*3.14})};
   place('burst',-3.5-r()*.4);place('tank',-1.8-r()*.5);place('iron',-1.5-r()*.5);place('gas',-1.3-r()*.5);place('well',-2.2-r()*.4);
   const b=this.sig[0],a=b.a;this.burst=new V3(b.x,b.y,b.z);
   this.curve=new THREE.CatmullRomCurve3([-6,-2.5,0,2.5,6].map(s=>new V3(b.x+Math.cos(a)*s,b.y+s*.02,b.z+Math.sin(a)*s)));this.bt=.5;
   /* trash sits shallow, artifacts deep; depth is below the local surface so nothing pokes through the lawn */
   this.score=0;this.finds=[];
-  const spot=()=>{let x,z,t=0;do{x=(r()-.5)*16.4;z=(r()-.5)*16.4}while(++t<80&&(PROT.some(([ox,oz,or])=>Math.hypot(x-ox,z-oz)<or+1.15)||this.finds.some(q=>Math.hypot(q.x-x,q.z-z)<1.35)||this.sig.some(s=>Math.hypot(s.x-x,s.z-z)<1.5)||Math.hypot(x-2.4,z+7.4)<1.7));return[x,z]};
+  const spot=()=>{let x,z,t=0;do{x=(r()-.5)*(S-3.6);z=(r()-.5)*(S-3.6)}while(++t<80&&(PROT.some(([ox,oz,or])=>Math.hypot(x-ox,z-oz)<or+1.15)||this.finds.some(q=>Math.hypot(q.x-x,q.z-z)<1.35)||this.sig.some(s=>Math.hypot(s.x-x,s.z-z)<1.5)||Math.hypot(x-MOWS[0],z-MOWS[1])<1.7||Math.hypot(x-BENCH[0],z-BENCH[1])<1.9));return[x,z]};
   const bury=(kind,d0,d1)=>{const[type,pts]=FIND[kind],[x,z]=spot();this.finds.push({kind,type,pts,sz:FSZ[kind],x,y:this.hAt(x,z)-(d0+r()*(d1-d0)),z,a:r()*6.283,held:0,done:0,out:0})};
-  for(let i=0;i<4;i++)for(const k of['can','bottle','boot'])bury(k,.2,1.8);
-  for(const k of['coin','arrow','pot','idol','coin'])bury(k,1.5,4)}
+  /* loot scales with yard area; tune here */
+  const TRASH_PER_M2=1/12,ART_PER_M2=1/40,nT=Math.round(S*S*TRASH_PER_M2),nA=Math.round(S*S*ART_PER_M2);
+  for(let i=0;i<nT;i++)bury(['can','bottle','boot'][i%3],.15,1);
+  for(let i=0;i<nA;i++)bury(['coin','arrow','pot','idol','coin'][i%5],.5,2.2)}
  hAt(x,z){const u=(x+S/2)/C,v=(z+S/2)/C;let i=Math.max(0,Math.min(N-1,Math.floor(u))),j=Math.max(0,Math.min(N-1,Math.floor(v)));
   const fu=Math.min(1,Math.max(0,u-i)),fv=Math.min(1,Math.max(0,v-j)),H=this.H,k=j*(N+1)+i;
   return(H[k]*(1-fu)+H[k+1]*fu)*(1-fv)+(H[k+N+1]*(1-fu)+H[k+N+2]*fu)*fv}
- apply(a){if(a.type!=='dig')return;const{x,z}=a,R=1,M=1.6,P=7,W=this,L=C*1.1;
+ apply(a){if(a.type!=='dig')return;const{x,z}=a,lv=Prog.up.shovel,R=1+.1*lv,M=R+.6,P=7,W=this,L=C*1.1;
   const ix=v=>Math.floor((v+S/2)/C);
   for(let j=Math.max(0,ix(z-M));j<=Math.min(N,ix(z+M)+1);j++)for(let i=Math.max(0,ix(x-M));i<=Math.min(N,ix(x+M)+1);i++){const d=Math.hypot(i*C-S/2-x,j*C-S/2-z),k=j*(N+1)+i;
-   if(d<R){const t=1-d/R;W.H[k]=Math.max(FLOOR,W.H[k]-.18*t*t*(3-2*t)*W.PW[k]);W.D[k]=1}else if(d<M){W.H[k]+=.03*Math.sin(Math.PI*(d-R)/(M-R));W.D[k]=1}}
+   if(d<R){const t=1-d/R;W.H[k]=Math.max(FLOOR,W.H[k]-.18*(1+.33*lv)*t*t*(3-2*t)*W.PW[k]);W.D[k]=1}else if(d<M){W.H[k]+=.03*Math.sin(Math.PI*(d-R)/(M-R));W.D[k]=1}}
   /* angle of repose: steep soil slumps downhill, so deep holes must be wide */
   const i0=Math.max(1,ix(x-P)),i1=Math.min(N-1,ix(x+P)+1),j0=Math.max(1,ix(z-P)),j1=Math.min(N-1,ix(z+P)+1);
   for(let it=0;it<10;it++)for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++){const k=j*(N+1)+i;for(const q of[k+1,k-1,k+N+1,k-N-1]){const d=W.H[k]-W.H[q];if(d>L){const m=(d-L)*.3*W.PW[k];if(m>0){W.H[k]-=m;W.H[q]+=m;W.D[k]=W.D[q]=1}}}}
@@ -46,18 +66,23 @@ R.setPixelRatio(1);R.shadowMap.enabled=true;R.shadowMap.type=THREE.PCFSoftShadow
 const lin=c=>new THREE.Color(c).convertSRGBToLinear();
 const scene=new THREE.Scene();scene.fog=new THREE.Fog(lin(0xcfe0e8),35,150);
 const cam=new THREE.PerspectiveCamera(70,1,.05,300);cam.rotation.order='YXZ';scene.add(cam);
+/* flashlight: a shadowless spot riding on the camera. Always in the scene (intensity 0 when off) so toggling never recompiles materials */
+const flash=new THREE.SpotLight(lin(0xfff0d0),0,16,.45,.7,1.2),flashT=new THREE.Object3D();flash.position.set(.12,-.1,0);flashT.position.set(0,0,-6);cam.add(flash,flashT);flash.target=flashT;
 function resize(){const pr=Math.min(devicePixelRatio,1.5),w=Math.round(innerWidth*pr),h=Math.round(innerHeight*pr);R.setSize(w,h,false);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();if(window.fxResize)fxResize(w,h)}addEventListener('resize',resize);resize();
-scene.add(new THREE.HemisphereLight(lin(0xbcd6ff),lin(0x5a4630),.7));
+const hemi=new THREE.HemisphereLight(lin(0xbcd6ff),lin(0x5a4630),.7);scene.add(hemi);
 const sun=new THREE.DirectionalLight(lin(0xfff1d6),1.8);sun.position.set(-16,9,-6);sun.castShadow=true;sun.shadow.mapSize.set(3072,3072);
-const sc=sun.shadow.camera;sc.left=sc.bottom=-16;sc.right=sc.top=16;sc.far=50;sun.shadow.bias=-.0004;sun.shadow.normalBias=.05;scene.add(sun);
+const sc=sun.shadow.camera;sc.left=sc.bottom=-16;sc.right=sc.top=16;sc.far=50;sun.shadow.bias=-.0004;sun.shadow.normalBias=.05;scene.add(sun);let skyMat;
 function cvTex(w,h,fn,rx=1,ry=1){const c=document.createElement('canvas');c.width=w;c.height=h;fn(c.getContext('2d'),w,h);const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(rx,ry);t.encoding=THREE.sRGBEncoding;t.anisotropy=8;return t}
 {/* sky dome with soft clouds */
  const t=cvTex(1024,512,(x,w,h)=>{const g=x.createLinearGradient(0,0,0,h);g.addColorStop(0,'#2f6bc0');g.addColorStop(.45,'#86b6e6');g.addColorStop(.5,'#d3e4ee');g.addColorStop(1,'#d9e6e0');x.fillStyle=g;x.fillRect(0,0,w,h);x.filter='blur(7px)';
-  for(let i=0;i<45;i++){const px=Math.random()*w,py=110+Math.random()*120;for(let k=0;k<7;k++){x.fillStyle='rgba(255,255,255,.2)';x.beginPath();x.ellipse(px+k*26-78,py+Math.random()*12,40+Math.random()*34,10+Math.random()*9,0,0,6.3);x.fill()}}});
- scene.add(new THREE.Mesh(new THREE.SphereGeometry(200,32,16),new THREE.MeshBasicMaterial({map:t,side:THREE.BackSide,fog:false,toneMapped:false,depthWrite:false})))}
+  /* each puff is drawn at -w, 0 and +w so clouds wrap around the left/right texture edge (no visible seam) */
+  for(let i=0;i<45;i++){const px=Math.random()*w,py=110+Math.random()*120;for(let k=0;k<7;k++){const ey=py+Math.random()*12,rx=40+Math.random()*34,ry=10+Math.random()*9;x.fillStyle='rgba(255,255,255,.2)';for(const o of[-w,0,w]){x.beginPath();x.ellipse(px+k*26-78+o,ey,rx,ry,0,0,6.3);x.fill()}}}});
+ t.generateMipmaps=false;t.minFilter=THREE.LinearFilter;t.anisotropy=1;/* no mip selection across the u=0/1 wrap, which draws a thin line */
+ skyMat=new THREE.MeshBasicMaterial({map:t,side:THREE.BackSide,fog:false,toneMapped:false,depthWrite:false});scene.add(new THREE.Mesh(new THREE.SphereGeometry(200,32,16),skyMat))}
 
 /* ---------- materials & scenery ---------- */
-const mat=(c,o={})=>new THREE.MeshStandardMaterial(Object.assign({color:lin(c),roughness:.9,metalness:0},o)),obst=[];
+const mat=(c,o={})=>new THREE.MeshStandardMaterial(Object.assign({color:lin(c),roughness:.9,metalness:0},o)),obst=[],GLASS=[],LAMPS=[];/* window glass + street-lamp bulb materials, driven by applyDay */
+const lit=m=>{m.emissive.setRGB(1,.72,.38);m.emissiveIntensity=0;m.userData.th=.1+Math.random()*.6;GLASS.push(m);return m};
 const speckle=(x,w,h,a)=>{const im=x.getImageData(0,0,w,h),d=im.data;for(let i=0;i<d.length;i+=4){const n=(Math.random()-.5)*a;d[i]+=n;d[i+1]+=n;d[i+2]+=n}x.putImageData(im,0,0)},
  siding=cvTex(256,256,(x,w,h)=>{x.fillStyle='#e8dec9';x.fillRect(0,0,w,h);for(let y=0;y<h;y+=16){const g=x.createLinearGradient(0,y,0,y+16);g.addColorStop(0,'#f7f0e0');g.addColorStop(.7,'#e6dcc6');g.addColorStop(1,'#cfc3a8');x.fillStyle=g;x.fillRect(0,y,w,16);x.fillStyle='#8f836b';x.fillRect(0,y+14,w,2);x.fillStyle='#fffaf0';x.fillRect(0,y,w,1);
    for(let i=0;i<5;i++){x.fillStyle=`rgba(120,100,70,${Math.random()*.12})`;x.fillRect(Math.random()*w,y+2,20+Math.random()*90,1)}}speckle(x,w,h,16)},4,2),
@@ -73,14 +98,18 @@ const speckle=(x,w,h,a)=>{const im=x.getImageData(0,0,w,h),d=im.data;for(let i=0
 const brickTex=cvTex(128,128,(x,w,h)=>{x.fillStyle='#4a3a32';x.fillRect(0,0,w,h);for(let r=0;r<8;r++)for(let c=-1;c<4;c++){const bx=c*32+(r%2?16:0),v=Math.random()*40|0;x.fillStyle=`rgb(${150+v},${72+v/2},${56+v/3})`;x.fillRect(bx+1,r*16+1,30,14)}speckle(x,w,h,26)},2,3),
  shingleTex=cvTex(64,64,(x,w,h)=>{x.fillStyle='#d8d8d8';x.fillRect(0,0,w,h);for(let row=0;row<2;row++)for(let c=0;c<2;c++){const v=190+Math.random()*60|0;x.fillStyle=`rgb(${v},${v},${v})`;x.fillRect(row*32+1,c*32+(row?16:0)+1,30,30)}
   x.fillStyle='rgba(0,0,0,.55)';for(let row=0;row<2;row++)x.fillRect(row*32,0,2,h);x.fillStyle='rgba(0,0,0,.3)';for(let row=0;row<2;row++)for(let c=0;c<3;c++)x.fillRect(row*32,(c*32+(row?16:0))%h,32,1);speckle(x,w,h,18)},21,19);
-function box(w,h,d,c,x,y,z,o){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat(c,o));m.position.set(x,y,z);m.castShadow=m.receiveShadow=true;scene.add(m);return m}
-function cyl(a,b,h,c,x,y,z,o){const m=new THREE.Mesh(new THREE.CylinderGeometry(a,b,h,14),mat(c,o));m.position.set(x,y,z);m.castShadow=m.receiveShadow=true;scene.add(m);return m}
+let PARENT=scene;/* where box/cyl/blob/house put things: the yard, outer-world and house groups are rebuilt or moved when the yard size changes */
+function clearGroup(g){g.traverse(o=>{if(o.geometry)o.geometry.dispose()});g.clear()}
+function box(w,h,d,c,x,y,z,o){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat(c,o));m.position.set(x,y,z);m.castShadow=m.receiveShadow=true;PARENT.add(m);return m}
+function cyl(a,b,h,c,x,y,z,o){const m=new THREE.Mesh(new THREE.CylinderGeometry(a,b,h,14),mat(c,o));m.position.set(x,y,z);m.castShadow=m.receiveShadow=true;PARENT.add(m);return m}
 function blob(r,c,x,y,z,sx=1,sy=1,sz=1){const g=new THREE.SphereGeometry(r,16,12),p=g.attributes.position;
  for(let i=0;i<p.count;i++){const k=1+Math.sin(p.getX(i)*5.1+p.getY(i)*3.7)*Math.cos(p.getZ(i)*4.3)*.17;p.setXYZ(i,p.getX(i)*k,p.getY(i)*k,p.getZ(i)*k)}g.computeVertexNormals();
- const m=new THREE.Mesh(g,mat(c));m.position.set(x,y,z);m.scale.set(sx,sy,sz);m.castShadow=m.receiveShadow=true;scene.add(m);return m}
+ const m=new THREE.Mesh(g,mat(c));m.position.set(x,y,z);m.scale.set(sx,sy,sz);m.castShadow=m.receiveShadow=true;PARENT.add(m);return m}
 /* ---------- hedges & gardens: neighbour lots + a tall perimeter hedge that closes in the neighbourhood ---------- */
 const HD={n:0,r:rng(21)},HY=new V3(0,1,0),
- HFP=[[0,-12.5,0,14,5],[-27,-9,1.5708,9,7],[-27,14,1.5708,8,6],[28,-8,-1.5708,10,7],[28,15,-1.5708,8,6.5],[-32,47,3.1416,10,7],[0,49,3.1416,11,7],[34,47,3.1416,9,7]];/* house footprints x,z,rot,w,d */
+ HFP0=[[0,-12.5,0,14,5],[-27,-9,1.5708,9,7],[-27,14,1.5708,8,6],[28,-8,-1.5708,10,7],[28,15,-1.5708,8,6.5],[-32,47,3.1416,10,7],[0,49,3.1416,11,7],[34,47,3.1416,9,7]],/* house footprints x,z,rot,w,d at the 20 m size */
+ HOFF=[[0,-1],[-1,0],[-1,0],[1,0],[1,0],[0,1],[0,1],[0,1]];/* which way each moves when the yard grows (times DEL): own house back, side lots out, street-side lots away */
+let HFP=HFP0;
 HD.m=(()=>{const g=new THREE.IcosahedronGeometry(1,1),p=g.attributes.position;
  for(let i=0;i<p.count;i++){const x=p.getX(i),y=p.getY(i),z=p.getZ(i),k=.9+.14*Math.sin(x*7.3+y*5.1)*Math.cos(z*6.1+y*3.3);p.setXYZ(i,x*k,y*k,z*k)}
  g.computeVertexNormals();const m=new THREE.InstancedMesh(g,mat(0xffffff,{roughness:1}),2600);m.castShadow=m.receiveShadow=true;m.frustumCulled=false;scene.add(m);return m})();/* keep count at capacity until the first setColorAt (r128 sizes instanceColor from mesh.count) */
@@ -95,23 +124,26 @@ function lot(cx,cz,ry,w,d){const W=(lx,lz)=>{const v=new V3(lx,0,lz).applyAxisAn
  L(-hw,bk,hw,bk,1.7,1.1);L(hw,bk,hw,fr,1.7,1.1);L(-hw,fr,-hw,bk,1.7,1.1);L(-hw,fr,hw,fr,.75,.8,[gp[0],gp[1],1.4]);
  for(let z=d/2+.9;z<fr-.3;z+=.95){const p=W(0,z);box(1.3,.07,.6,0x9c9a92,p[0],oh(p[0],p[1])+.03,p[1]).rotation.y=ry}
 }
-function perimeter(){const a=-52,b=52,c=-34,e=62;hedgeLine(a,c,b,c,3.8,1.9);hedgeLine(b,c,b,e,3.8,1.9);hedgeLine(b,e,a,e,3.8,1.9);hedgeLine(a,e,a,c,3.8,1.9)}
-{buildOuter();
- const im=new THREE.InstancedMesh(new THREE.BoxGeometry(.2,1.3,.05),mat(0xffffff,{map:wood}),320),o=new THREE.Object3D();let n=0;
+function perimeter(){const a=-52-DEL,b=52+DEL,c=-34,e=62+DEL;hedgeLine(a,c,b,c,3.8,1.9);hedgeLine(b,c,b,e,3.8,1.9);hedgeLine(b,e,a,e,3.8,1.9);hedgeLine(a,e,a,c,3.8,1.9)}
+const yardG=new THREE.Group(),houseG=new THREE.Group(),outerG=new THREE.Group();scene.add(yardG,houseG,outerG);/* yard (rebuilt per size), house (built once, moved back by DEL), outer world (rebuilt per size) */
+function buildFence(){/* picket fence on all four sides; the house closes the fourth, so only the stretches either side of it are fenced */
+ const cap=Math.ceil((S+.2)/.26)*3+Math.ceil((YH-6.8)/.26)*2+8,im=new THREE.InstancedMesh(new THREE.BoxGeometry(.2,1.3,.05),mat(0xffffff,{map:wood}),cap),o=new THREE.Object3D();let n=0;
  const add=(x,z,r)=>{o.position.set(x,.6,z);o.rotation.y=r;o.updateMatrix();im.setMatrixAt(n++,o.matrix)};
- for(let k=-10;k<=10;k+=.26){add(k,10.1,0);add(-10.1,k,1.5708);add(10.1,k,1.5708)}
- /* back stretches: close the gap between the side fences and the house (house front face is z=-10, x=-7..7) */
- for(let k=7;k<=10.1;k+=.26){add(k,-10,0);add(-k,-10,0)}
- im.count=n;im.castShadow=im.receiveShadow=true;scene.add(im);
- for(const y of[.3,1.05]){box(20.4,.08,.1,0x8f6b40,0,y,10.17);box(.1,.08,20.4,0x8f6b40,-10.17,y,0);box(.1,.08,20.4,0x8f6b40,10.17,y,0);box(3.3,.08,.1,0x8f6b40,8.55,y,-10.07);box(3.3,.08,.1,0x8f6b40,-8.55,y,-10.07)}
+ for(let k=-YH;k<=YH;k+=.26){add(k,YH+.1,0);add(-YH-.1,k,1.5708);add(YH+.1,k,1.5708)}
+ /* back stretches: close the gap between the side fences and the house (house front face is z=-YH, x=-7..7) */
+ for(let k=7;k<=YH+.1;k+=.26){add(k,-YH,0);add(-k,-YH,0)}
+ im.count=n;im.castShadow=im.receiveShadow=true;PARENT.add(im);
+ const bl=YH-6.7,bc=(6.9+YH+.2)/2;
+ for(const y of[.3,1.05]){box(S+.4,.08,.1,0x8f6b40,0,y,YH+.17);box(.1,.08,S+.4,0x8f6b40,-YH-.17,y,0);box(.1,.08,S+.4,0x8f6b40,YH+.17,y,0);box(bl,.08,.1,0x8f6b40,bc,y,-YH-.07);box(bl,.08,.1,0x8f6b40,-bc,y,-YH-.07)}}
+{PARENT=houseG;
  /* house */
  box(14,5,5,0xffffff,0,2.5,-12.5,{map:siding});
- const rg=new THREE.CylinderGeometry(1,1,15.4,3).rotateZ(Math.PI/2).rotateX(-Math.PI/2),rf=new THREE.Mesh(rg,mat(0x7a4636,{map:shingleTex,roughness:.85}));rf.scale.set(1,2.3,6.2);rf.position.set(0,6.1,-12.6);rf.castShadow=true;scene.add(rf);
+ const rg=new THREE.CylinderGeometry(1,1,15.4,3).rotateZ(Math.PI/2).rotateX(-Math.PI/2),rf=new THREE.Mesh(rg,mat(0x7a4636,{map:shingleTex,roughness:.85}));rf.scale.set(1,2.3,6.2);rf.position.set(0,6.1,-12.6);rf.castShadow=true;PARENT.add(rf);
  box(1,2.2,1,0xffffff,4.5,6.8,-12.5,{map:brickTex,roughness:.95});box(1.25,.16,1.25,0x8a8580,4.5,7.95,-12.5);box(14.2,.18,.3,0xe6e0d4,0,5,-9.9);box(14.2,.1,.14,0x8a8f94,0,4.82,-9.82,{roughness:.4,metalness:.5});
  /* foundation (split around the door), corner boards */
  for(const fx of[-4,4])box(6.2,.4,5.2,0x77716a,fx,.2,-12.5,{roughness:1});
  for(const cx of[-7,7])box(.22,5,.22,0xf5f0e4,cx,2.5,-9.98);
- for(const x of[-4.2,4.2]){box(1.9,1.9,.12,0xf2efe8,x,2.8,-9.96);box(1.6,1.6,.14,0x2d4a63,x,2.8,-9.94,{roughness:.15,metalness:.4});box(.06,1.6,.16,0xf2efe8,x,2.8,-9.93);box(1.6,.06,.16,0xf2efe8,x,2.8,-9.93);
+ for(const x of[-4.2,4.2]){box(1.9,1.9,.12,0xf2efe8,x,2.8,-9.96);lit(box(1.6,1.6,.14,0x2d4a63,x,2.8,-9.94,{roughness:.15,metalness:.4}).material);box(.06,1.6,.16,0xf2efe8,x,2.8,-9.93);box(1.6,.06,.16,0xf2efe8,x,2.8,-9.93);
   box(2.2,.1,.28,0xe6e0d4,x,1.82,-9.86);box(2.2,.16,.2,0xf2efe8,x,3.82,-9.9);
   for(const sx of[-1.2,1.2]){box(.5,1.9,.07,0x3f5a48,x+sx,2.8,-9.93);for(let s=0;s<6;s++)box(.4,.03,.02,0x2f4636,x+sx,2.1+s*.28,-9.885)}}
  /* door: frame, panelled leaf, handle, small hood, step, lamp */
@@ -121,10 +153,27 @@ function perimeter(){const a=-52,b=52,c=-34,e=62;hedgeLine(a,c,b,c,3.8,1.9);hedg
  box(2.2,.1,1,0x6e3a2e,0,3.05,-9.5);for(const bx of[-1,1])box(.08,.55,.08,0xf2efe8,bx,2.75,-9.55);
  box(1.9,.15,.7,0xa7a39a,0,.075,-9.65);
  box(.14,.25,.14,0x222222,1.4,2.2,-9.9);box(.1,.14,.1,0xfff2c0,1.4,2.2,-9.84,{emissive:0xffe9a0,emissiveIntensity:1.5});
+ /* workbench against the house wall: the shop (E). Lamp glows at night. Built in the house's own frame (BENCH0); BENCH is where it ends up. */
+ const[bx,bz]=BENCH0,wd={map:wood,roughness:.85};
+ /* 1.5 m wide: fits between the left window shutter (x<-2.75) and the door step (x>-.95) */
+ box(1.5,.08,.75,0xffffff,bx,.9,bz,wd);box(1.36,.05,.6,0xffffff,bx,.32,bz,wd);
+ for(const sx of[-.67,.67])for(const sz of[-.3,.3])box(.08,.9,.08,0xffffff,bx+sx,.45,bz+sz,wd);
+ box(1.5,.95,.05,0xffffff,bx,1.45,bz-.37,wd);
+ box(.5,.22,.28,0xb03a2e,bx-.5,1.05,bz-.02,{roughness:.5,metalness:.3});box(.54,.04,.3,0x8a2a20,bx-.5,1.18,bz-.02,{roughness:.5,metalness:.3});
+ box(.14,.18,.14,0x4a5258,bx+.55,1.04,bz+.22,{roughness:.4,metalness:.6});box(.3,.1,.18,0x6b7378,bx+.1,.99,bz+.1,{roughness:.4,metalness:.6});
+ for(const[hx,hl]of[[-.6,.34],[-.3,.26],[0,.4]]){box(.03,hl,.03,0x8a8f94,bx+hx,1.5,bz-.33,{roughness:.4,metalness:.6});box(.07,.07,.05,0x3a3f44,bx+hx,1.5+hl/2+.02,bz-.33,{roughness:.5,metalness:.5})}
+ /* clamp lamp bolted to the top of the backboard: post, arm, shade, bulb */
+ cyl(.015,.015,.36,0x333840,bx+.55,2.1,bz-.37);cyl(.015,.015,.3,0x333840,bx+.55,2.28,bz-.22).rotation.x=Math.PI/2;cyl(.03,.09,.07,0x333840,bx+.55,2.24,bz-.07);
+ const bulb=new THREE.Mesh(new THREE.SphereGeometry(.05,10,8),new THREE.MeshBasicMaterial({color:new THREE.Color(5,4,2.4)}));bulb.position.set(bx+.55,2.17,bz-.07);PARENT.add(bulb);LAMPS.push(bulb.material);
+ const sign=new THREE.Mesh(new THREE.PlaneGeometry(1.3,.34),new THREE.MeshStandardMaterial({roughness:.85,map:cvTex(260,68,(x,w,h)=>{x.fillStyle='#3a2a1c';x.fillRect(0,0,w,h);x.strokeStyle='#e9a23b';x.lineWidth=4;x.strokeRect(5,5,w-10,h-10);x.fillStyle='#e9a23b';x.font='bold 36px Georgia,serif';x.textAlign='center';x.textBaseline='middle';x.fillText('WORKBENCH',w/2,h/2+2)})}));
+ sign.position.set(bx,2.45,-9.96);sign.castShadow=true;PARENT.add(sign);
+}
+PARENT=scene;const G0=GLASS.length,L0=LAMPS.length;/* house windows and bench bulb; the outer world adds more after these and is rebuilt per size */
+function buildYard(){clearGroup(yardG);PARENT=yardG;obst.length=0;obst.push({x:BENCH[0],z:BENCH[1],r:.95});buildFence();
  /* trees + bin: soil around them is held by roots (see PROT in World), so they never float or sink */
- [[-8,-6,1.4],[8.3,-4,1.1],[-7.6,6.5,1.2]].forEach(([x,z,s])=>{cyl(.16*s,.3*s,2.4*s,0x4d3520,x,1.2*s,z);
+ TREES.forEach(([x,z,s])=>{cyl(.16*s,.3*s,2.4*s,0x4d3520,x,1.2*s,z);
   [[0,3.3,0,1.5],[.8,4,-.3,1.1],[-.8,3.9,.4,1.15],[.2,4.6,.1,.95],[0,3,.9,1],[-.3,3.2,-.9,1]].forEach(([a,b,c,r],i)=>blob(r*s,i%2?0x3a7a30:0x2d6a2c,x+a*s,b*s,z+c*s));obst.push({x,z,r:.5*s})});
- const rb=rng(7);for(let k=0;k<14;k++){const t=-9+k*1.4;[[9.3,t],[-9.3,t],[t,9.3]].forEach(([x,z])=>{if(rb()<.5){const s=.5+rb()*.5,c=rb()<.5;if(Math.hypot(x-CRATE[0],z-CRATE[1])>1.35)blob(s,c?0x2d6a2b:0x3d8036,x,s*.7,z,1.2,.85,1.2)}})}
+ const rb=rng(7),nb=Math.round(14*YH/10),st=2*(YH-1)/(nb-1),bx=YH-.7;for(let k=0;k<nb;k++){const t=-(YH-1)+k*st;[[bx,t],[-bx,t],[t,bx]].forEach(([x,z])=>{if(rb()<.5){const s=.5+rb()*.5,c=rb()<.5;if(Math.hypot(x-CRATE[0],z-CRATE[1])>1.35)blob(s,c?0x2d6a2b:0x3d8036,x,s*.7,z,1.2,.85,1.2)}})}
  cyl(.35,.3,.9,0x6b7378,BIN[0],.45,BIN[1],{roughness:.5,metalness:.3});cyl(.38,.38,.08,0x4c5358,BIN[0],.92,BIN[1]);
  /* open crate for artifacts, facing the yard */
  const[cx,cz]=CRATE;
@@ -133,49 +182,52 @@ function perimeter(){const a=-52,b=52,c=-34,e=62;hedgeLine(a,c,b,c,3.8,1.9);hedg
  box(1.02,.5,.07,0xffffff,cx,.36,cz-.35,{map:wood,roughness:.85});box(1.02,.5,.07,0xffffff,cx,.36,cz+.35,{map:wood,roughness:.85});
  box(.84,.18,.6,0x241c16,cx,.24,cz,{roughness:1});
  for(const yy of[.24,.46])box(.02,.04,.66,0x6b5340,cx-.52,yy,cz,{roughness:.9});
- obst.push({x:cx,z:cz,r:.7});
-}
+ obst.push({x:cx,z:cz,r:.7});PARENT=scene}
 
 /* ---------- surrounding world: hills, street, neighbours, forest ---------- */
 function oh(x,z){const r=Math.hypot(x,z),m=Math.min(1,Math.max(0,(r-55)/80)),n=Math.sin(x*.021+1.3)*Math.cos(z*.017+.4)+.5*Math.sin(x*.05+z*.043)+.25*Math.sin(x*.11-z*.09);return m*m*(3-2*m)*(9+24*(.5+.2*n))}
-function house(x,z,ry,w,d,h,wc,rc,y=0){const G=new THREE.Group();G.position.set(x,y,z);G.rotation.y=ry;scene.add(G);
+function house(x,z,ry,w,d,h,wc,rc,y=0){const G=new THREE.Group();G.position.set(x,y,z);G.rotation.y=ry;PARENT.add(G);
  const A=(m,a,b,c)=>{m.position.set(a,b,c);m.castShadow=m.receiveShadow=true;G.add(m);return m},B=(w2,h2,d2,c,o)=>new THREE.Mesh(new THREE.BoxGeometry(w2,h2,d2),mat(c,o));
  A(B(w,h,d,wc,{map:siding}),0,h/2,0);const rise=h*.4,rf=A(new THREE.Mesh(new THREE.CylinderGeometry(1,1,w+.8,3).rotateZ(Math.PI/2).rotateX(-Math.PI/2),mat(rc,{roughness:.8})),0,h+.5*rise,0);rf.scale.set(1,rise,(d/2+.45)/.87);
- for(const i of[-1,1]){A(B(w*.2,h*.3,.12,0xf2efe8),i*w*.27,h*.6,d/2+.02);A(B(w*.17,h*.26,.14,0x2d4a63,{roughness:.15,metalness:.4}),i*w*.27,h*.6,d/2+.03)}
+ for(const i of[-1,1]){A(B(w*.2,h*.3,.12,0xf2efe8),i*w*.27,h*.6,d/2+.02);lit(A(B(w*.17,h*.26,.14,0x2d4a63,{roughness:.15,metalness:.4}),i*w*.27,h*.6,d/2+.03).material)}
  A(B(1,2.1,.14,0x5a3a22),0,1.05,d/2+.03);A(B(.8,rise*1.5,.8,0x8a5a48),w*.3,h+rise*.9,0)}
-function buildOuter(){
+function buildOuter(){clearGroup(outerG);PARENT=outerG;HD.n=0;HD.r=rng(21);GLASS.length=G0;LAMPS.length=L0;
  const r=rng(11),gt=soilTex.clone();gt.repeat.set(390,390);gt.needsUpdate=true;/* same texel density as the play area (26 tiles per 20 m) */
  const g=new THREE.PlaneGeometry(300,300,150,150).rotateX(-Math.PI/2),P=g.attributes.position,cl=new Float32Array(P.count*3);
  for(let i=0;i<P.count;i++){const x=P.getX(i),z=P.getZ(i),h=oh(x,z),rr=Math.hypot(x,z),q=Math.abs(Math.sin(x*12.9+z*78.2)*437.5)%1;P.setY(i,h);
   const n=Math.sin(x*.09)*Math.sin(z*.11)+.7*Math.sin(x*.031+z*.027);let cr=.2+.06*q,cg=.42+.08*q,cb=.14;
-  if(rr>40&&rr<105&&n>.45&&!(Math.abs(x)<54&&z>-36&&z<64)){cr=.6+.05*q;cg=.52+.05*q;cb=.24}
+  if(rr>40&&rr<105&&n>.45&&!(Math.abs(x)<54+DEL&&z>-36&&z<64+DEL)){cr=.6+.05*q;cg=.52+.05*q;cb=.24}
   if(h>16){const k=Math.min(1,(h-16)/8);cr+=(.5-cr)*k;cg+=(.47-cg)*k;cb+=(.42-cb)*k}
   cl[i*3]=cr*cr*1.6;cl[i*3+1]=cg*cg*1.6;cl[i*3+2]=cb*cb*1.6}
  g.setAttribute('color',new THREE.BufferAttribute(cl,3));
- const ix=g.index.array,keep=[];for(let t=0;t<ix.length;t+=3){const a=ix[t],b=ix[t+1],c=ix[t+2];if(Math.abs(P.getX(a)+P.getX(b)+P.getX(c))<30&&Math.abs(P.getZ(a)+P.getZ(b)+P.getZ(c))<30)continue;keep.push(a,b,c)}
- g.setIndex(keep);g.computeVertexNormals();scene.add(new THREE.Mesh(g,new THREE.MeshStandardMaterial({vertexColors:true,map:gt,bumpMap:gt,bumpScale:3,roughness:1})));
- const HS=[[-27,-9,1.5708,9,7,4.2,0x9fb3c4,0x5a3a32],[-27,14,1.5708,8,6,4,0xd8c39a,0x3d3d44],[28,-8,-1.5708,10,7,4.4,0xc9877a,0x4a4a50],[28,15,-1.5708,8,6.5,4,0x9db08c,0x6a3b2e],[-32,47,3.1416,10,7,4.2,0xe0d6bf,0x55402f],[0,49,3.1416,11,7,4.6,0x8fa3b8,0x3f3f46],[34,47,3.1416,9,7,4.2,0xb98a6c,0x4a3a35]];
+ const ix=g.index.array,keep=[];for(let t=0;t<ix.length;t+=3){const a=ix[t],b=ix[t+1],c=ix[t+2];if(Math.abs(P.getX(a)+P.getX(b)+P.getX(c))<3*YH&&Math.abs(P.getZ(a)+P.getZ(b)+P.getZ(c))<3*YH)continue;keep.push(a,b,c)}/* cut-out where the yard terrain sits */
+ g.setIndex(keep);g.computeVertexNormals();PARENT.add(new THREE.Mesh(g,new THREE.MeshStandardMaterial({vertexColors:true,map:gt,bumpMap:gt,bumpScale:3,roughness:1})));
+ const HS=[[-27,-9,1.5708,9,7,4.2,0x9fb3c4,0x5a3a32],[-27,14,1.5708,8,6,4,0xd8c39a,0x3d3d44],[28,-8,-1.5708,10,7,4.4,0xc9877a,0x4a4a50],[28,15,-1.5708,8,6.5,4,0x9db08c,0x6a3b2e],[-32,47,3.1416,10,7,4.2,0xe0d6bf,0x55402f],[0,49,3.1416,11,7,4.6,0x8fa3b8,0x3f3f46],[34,47,3.1416,9,7,4.2,0xb98a6c,0x4a3a35]].map((a,i)=>[a[0]+HOFF[i+1][0]*DEL,a[1]+HOFF[i+1][1]*DEL,...a.slice(2)]);
  HS.forEach(a=>house(...a));HS.forEach(a=>lot(a[0],a[1],a[2],a[3],a[4]));perimeter();
- house(-80,-58,.6,12,9,6,0x8c2f2a,0x44464a,oh(-80,-58));const sy=oh(-66,-52);cyl(2.2,2.2,10,0xb7bdc2,-66,sy+5,-52,{metalness:.3,roughness:.5});const cap=new THREE.Mesh(new THREE.ConeGeometry(2.4,2,14),mat(0x6d737a));cap.position.set(-66,sy+11,-52);scene.add(cap);
+ house(-80,-58,.6,12,9,6,0x8c2f2a,0x44464a,oh(-80,-58));const sy=oh(-66,-52);cyl(2.2,2.2,10,0xb7bdc2,-66,sy+5,-52,{metalness:.3,roughness:.5});const cap=new THREE.Mesh(new THREE.ConeGeometry(2.4,2,14),mat(0x6d737a));cap.position.set(-66,sy+11,-52);PARENT.add(cap);
  const tree=(x,z,s)=>{cyl(.16*s,.3*s,2.4*s,0x4d3520,x,1.2*s,z);[[0,3.3,0,1.5],[.8,4,-.3,1.1],[-.8,3.9,.4,1.15],[.2,4.6,.1,.95]].forEach(([a,b,c,q],i)=>blob(q*s,i%2?0x3a7a30:0x2d6a2c,x+a*s,b*s,z+c*s))};
- [[-22,2,1.2],[22,2,1.1],[-23,-20,1.3],[24,-19,1.2],[-22,25,1],[23,26,1.1]].forEach(a=>tree(...a));
- box(104,.05,8,0x3a3a3f,0,.025,30,{roughness:.95});for(let k=0;k<14;k++)box(2.5,.06,.2,0xe8e0a0,-46+k*7.1,.04,30);box(104,.12,2,0xb8b5ac,0,.06,25.5);box(104,.12,2,0xb8b5ac,0,.06,34.5);
- for(let k=-2;k<=2;k++){const x=k*18;cyl(.1,.14,8,0x5a4a3a,x+9,4,36.8);box(2.2,.12,.12,0x5a4a3a,x+9,7.6,36.8);cyl(.06,.08,5,0x333840,x,2.5,24.6);box(.7,.12,.3,0x333840,x+.3,5,24.6);
-  const lm=new THREE.Mesh(new THREE.SphereGeometry(.12,8,6),new THREE.MeshBasicMaterial({color:new THREE.Color(5,4,2.4)}));lm.position.set(x+.4,4.9,24.6);scene.add(lm)}
- box(4.2,.7,1.8,0xa83232,-14,.65,28.3,{roughness:.35,metalness:.5});box(2.2,.6,1.6,0x23303a,-14.3,1.28,28.3,{roughness:.1,metalness:.6});
- for(const dx of[-1.4,1.4])for(const dz of[-.9,.9])cyl(.36,.36,.25,0x111111,-14+dx,.36,28.3+dz).rotation.x=Math.PI/2;
- const TN=460,RC=150,o=new THREE.Object3D(),cc=new THREE.Color(),bad=(x,z)=>HS.some(a=>Math.hypot(x-a[0],z-a[1])<13)||(Math.abs(z-30)<8&&Math.abs(x)<58)||Math.hypot(x+78,z+58)<16||Math.hypot(x,z)<46||Math.abs(Math.max(Math.abs(x)-52,Math.abs(z-14)-48))<5;
+ [[-22,2,1.2,-1,0],[22,2,1.1,1,0],[-23,-20,1.3,-1,0],[24,-19,1.2,1,0],[-22,25,1,-1,1],[23,26,1.1,1,1]].forEach(a=>tree(a[0]+a[3]*DEL,a[1]+a[4]*DEL,a[2]));
+ /* street, sidewalks, lamps and the parked car sit DEL further out */
+ const sz=30+DEL;
+ box(104,.05,8,0x3a3a3f,0,.025,sz,{roughness:.95});for(let k=0;k<14;k++)box(2.5,.06,.2,0xe8e0a0,-46+k*7.1,.04,sz);box(104,.12,2,0xb8b5ac,0,.06,sz-4.5);box(104,.12,2,0xb8b5ac,0,.06,sz+4.5);
+ for(let k=-2;k<=2;k++){const x=k*18;cyl(.1,.14,8,0x5a4a3a,x+9,4,sz+6.8);box(2.2,.12,.12,0x5a4a3a,x+9,7.6,sz+6.8);cyl(.06,.08,5,0x333840,x,2.5,sz-5.4);box(.7,.12,.3,0x333840,x+.3,5,sz-5.4);
+  const lm=new THREE.Mesh(new THREE.SphereGeometry(.12,8,6),new THREE.MeshBasicMaterial({color:new THREE.Color(5,4,2.4)}));lm.position.set(x+.4,4.9,sz-5.4);PARENT.add(lm);LAMPS.push(lm.material)}
+ box(4.2,.7,1.8,0xa83232,-14,.65,sz-1.7,{roughness:.35,metalness:.5});box(2.2,.6,1.6,0x23303a,-14.3,1.28,sz-1.7,{roughness:.1,metalness:.6});
+ for(const dx of[-1.4,1.4])for(const dz of[-.9,.9])cyl(.36,.36,.25,0x111111,-14+dx,.36,sz-1.7+dz).rotation.x=Math.PI/2;
+ const TN=460,RC=150,o=new THREE.Object3D(),cc=new THREE.Color(),bad=(x,z)=>HS.some(a=>Math.hypot(x-a[0],z-a[1])<13)||(Math.abs(z-sz)<8&&Math.abs(x)<58+DEL)||Math.hypot(x+78,z+58)<16||Math.hypot(x,z)<46||Math.abs(Math.max(Math.abs(x)-52-DEL,Math.abs(z-14-DEL/2)-48-DEL/2))<5;
  const TK=new THREE.InstancedMesh(new THREE.CylinderGeometry(.2,.3,2.4,6).translate(0,1.2,0),mat(0x4d3520),TN+RC),C1=new THREE.InstancedMesh(new THREE.ConeGeometry(1.7,4.4,8).translate(0,3.8,0),mat(0xffffff),TN),C2=new THREE.InstancedMesh(new THREE.ConeGeometry(1.2,3.4,8).translate(0,6,0),mat(0xffffff),TN),CR=new THREE.InstancedMesh(new THREE.SphereGeometry(2,10,8).translate(0,4.6,0),mat(0xffffff),RC);
  for(let i=0;i<TN+RC;i++){let x,z,t=0;do{const a=r()*6.283,d=46+Math.pow(r(),.8)*90;x=Math.cos(a)*d;z=Math.sin(a)*d}while(bad(x,z)&&t++<30);const sc=1+r()*1.2;
   o.position.set(x,oh(x,z)-.15,z);o.rotation.set(0,r()*6,0);o.scale.setScalar(sc);o.updateMatrix();TK.setMatrixAt(i,o.matrix);
   if(i<TN){C1.setMatrixAt(i,o.matrix);C2.setMatrixAt(i,o.matrix);const h=.3+r()*.05,l=.12+r()*.1;C1.setColorAt(i,cc.setHSL(h,.5,l).convertSRGBToLinear());C2.setColorAt(i,cc.setHSL(h,.5,l+.04).convertSRGBToLinear())}
   else{CR.setMatrixAt(i-TN,o.matrix);CR.setColorAt(i-TN,cc.setHSL(r()<.3?.1+r()*.05:.25+r()*.07,.55,.2+r()*.1).convertSRGBToLinear())}}
- [TK,C1,C2,CR].forEach(m=>{m.instanceMatrix.needsUpdate=true;if(m.instanceColor)m.instanceColor.needsUpdate=true;m.frustumCulled=false;scene.add(m)})}
+ [TK,C1,C2,CR].forEach(m=>{m.instanceMatrix.needsUpdate=true;if(m.instanceColor)m.instanceColor.needsUpdate=true;m.frustumCulled=false;PARENT.add(m)});buildOuterGrass();PARENT=scene}
 
 /* ---------- terrain ---------- */
-const tg=new THREE.PlaneGeometry(S,S,N,N).rotateX(-Math.PI/2),pos=tg.attributes.position,col=new THREE.BufferAttribute(new Float32Array(pos.count*3),3);tg.setAttribute('color',col);
-const terrain=new THREE.Mesh(tg,new THREE.MeshStandardMaterial({vertexColors:true,map:soilTex,bumpMap:soilTex,bumpScale:3,roughness:1}));terrain.receiveShadow=terrain.castShadow=true;scene.add(terrain);
-const NZ=new Float32Array(pos.count);for(let j=0;j<=N;j++)for(let i=0;i<=N;i++)NZ[j*(N+1)+i]=Math.abs(Math.sin(i*12.9898+j*78.233)*43758.5453)%1;
+let tg,pos,col,NZ;/* rebuilt by buildTerrain() whenever the yard size changes */
+const terrain=new THREE.Mesh(new THREE.BufferGeometry(),new THREE.MeshStandardMaterial({vertexColors:true,map:soilTex,bumpMap:soilTex,bumpScale:3,roughness:1}));terrain.receiveShadow=terrain.castShadow=true;terrain.frustumCulled=false;scene.add(terrain);
+function buildTerrain(){if(tg)tg.dispose();tg=new THREE.PlaneGeometry(S,S,N,N).rotateX(-Math.PI/2);pos=tg.attributes.position;col=new THREE.BufferAttribute(new Float32Array(pos.count*3),3);tg.setAttribute('color',col);terrain.geometry=tg;
+ soilTex.repeat.set(26*S/20,26*S/20);/* same texel density at every size */
+ NZ=new Float32Array(pos.count);for(let j=0;j<=N;j++)for(let i=0;i<=N;i++)NZ[j*(N+1)+i]=Math.abs(Math.sin(i*12.9898+j*78.233)*43758.5453)%1}
 let world;const L2=v=>v*v*1.6,SC=[0,0,0];
 /* soil colour by depth below the original surface (shared by terrain + dig particles); writes into SC */
 function soilRGB(d,n){let r,g,b;
@@ -193,14 +245,15 @@ function sync(){const W=world;
  pos.needsUpdate=col.needsUpdate=true;tg.computeVertexNormals();tg.computeBoundingSphere()}
 
 /* ---------- grass, buried rocks, buried objects ---------- */
-const GN=26000,gg=new THREE.ConeGeometry(.024,.4,3,3,true).translate(0,.2,0);
+const GNMAX=Math.round(26000*36*36/400);let GN=26000;/* blades on the mowable lawn: 65 per m2, buffers sized for the largest yard */
+const gg=new THREE.ConeGeometry(.024,.4,3,3,true).translate(0,.2,0);
 {const a=gg.attributes.position,cc=new Float32Array(a.count*3);for(let i=0;i<a.count;i++){const y=a.getY(i)/.4;a.setX(i,a.getX(i)+y*y*.12);cc.fill(.15+.85*Math.min(1,y),i*3,i*3+3)}gg.computeVertexNormals();gg.setAttribute('color',new THREE.BufferAttribute(cc,3))}
-const grass=new THREE.InstancedMesh(gg,new THREE.MeshStandardMaterial({vertexColors:true,roughness:.95,side:THREE.DoubleSide}),GN),gp=[],go=new THREE.Object3D(),gc=new THREE.Color();grass.receiveShadow=true;grass.frustumCulled=false;scene.add(grass);
+const grass=new THREE.InstancedMesh(gg,new THREE.MeshStandardMaterial({vertexColors:true,roughness:.95,side:THREE.DoubleSide}),GNMAX),gp=[],go=new THREE.Object3D(),gc=new THREE.Color();grass.receiveShadow=true;grass.frustumCulled=false;scene.add(grass);grass.setColorAt(0,gc);/* allocate the full colour buffer before count is reduced */
 const GU={uT:{value:0}};grass.material.onBeforeCompile=sd=>{sd.uniforms.uT=GU.uT;sd.vertexShader='uniform float uT;\n'+sd.vertexShader.replace('#include <begin_vertex>','vec3 transformed=vec3(position);float wv=position.y/.4;vec4 ip=instanceMatrix*vec4(0.,0.,0.,1.);transformed.x+=sin(uT*1.8+ip.x*.7+ip.z*.5)*.06*wv;transformed.z+=cos(uT*1.4+ip.x*.4+ip.z*.8)*.05*wv;')};
-const MG=40,MC=.5,mown=new Uint8Array(MG*MG),gbuck=[];/* 0.5 m mown grid over the 20 m yard, blades bucketed per cell */
+const MC=.5;let mown=new Uint8Array(MG*MG);const gbuck=[];/* 0.5 m mown grid over the yard (MG cells a side), blades bucketed per cell */
 const mcell=(x,z)=>Math.max(0,Math.min(MG-1,Math.floor((x+S/2)/MC)))+MG*Math.max(0,Math.min(MG-1,Math.floor((z+S/2)/MC)));
 function buildGrass(){const r=rng(world.seed+1);gp.length=0;mown.fill(0);for(let i=0;i<MG*MG;i++)gbuck[i]=[];
- for(let n=0;n<GN;n++){let x,z;do{x=(r()-.5)*19.6;z=-9.8+r()*19.6}while(!free(x,z)||(Math.abs(x)<1.2&&z<-9));const s=.7+r()*.9,y=world.hAt(x,z)-.02;gp.push({x,z,y,s});gbuck[mcell(x,z)].push(n);
+ for(let n=0;n<GN;n++){let x,z;do{x=(r()-.5)*(S-.4);z=-(YH-.2)+r()*(S-.4)}while(!free(x,z)||(Math.abs(x)<1.2&&z<-(YH-1)));const s=.7+r()*.9,y=world.hAt(x,z)-.02;gp.push({x,z,y,s});gbuck[mcell(x,z)].push(n);
  go.position.set(x,y,z);go.rotation.set((r()-.5)*.5,r()*6,(r()-.5)*.5);go.scale.set(1,s,1);go.updateMatrix();grass.setMatrixAt(n,go.matrix);grass.setColorAt(n,gc.setHSL(.22+r()*.06,.55,.28+r()*.18).convertSRGBToLinear())}
  grass.instanceMatrix.needsUpdate=grass.instanceColor.needsUpdate=true}
 /* cut whole cells whose centre is under the deck, so the swath is a solid strip instead of scattered blades */
@@ -211,34 +264,37 @@ const mowQ=[];/* cells mown since the last network flush (co-op only) */
 function cutCell(ci){for(const n of gbuck[ci]){const q=gp[n];if(q.gone||q.cut)continue;q.cut=1;
   go.position.set(q.x,q.y,q.z);go.rotation.set(0,0,0);go.scale.set(1,q.s*.12,1);go.updateMatrix();grass.setMatrixAt(n,go.matrix)}}
 /* a dig needs the aim spot and its neighbours within ~1 m mown (no grass cells count as mown) */
-function isMown(x,z){for(let j=-2;j<=2;j++)for(let i=-2;i<=2;i++){const cx=x+i*MC,cz=z+j*MC;if(Math.hypot(i,j)>2.2||Math.abs(cx)>9.9||Math.abs(cz)>9.9)continue;const ci=mcell(cx,cz);if(mown[ci]||!gbuck[ci].length)continue;/* a dug cell has lost its grass, so it no longer blocks the shovel */
+function isMown(x,z){for(let j=-2;j<=2;j++)for(let i=-2;i<=2;i++){const cx=x+i*MC,cz=z+j*MC;if(Math.hypot(i,j)>2.2||Math.abs(cx)>YH-.1||Math.abs(cz)>YH-.1)continue;const ci=mcell(cx,cz);if(mown[ci]||!gbuck[ci].length)continue;/* a dug cell has lost its grass, so it no longer blocks the shovel */
   if(gbuck[ci].some(n=>!gp[n].gone&&!gp[n].cut))return false}return true}
 /* static grass beyond the fence so the surroundings match the lawn; thins out with distance */
-{const ON=40000,og=new THREE.InstancedMesh(gg,grass.material,ON),r=rng(5);og.receiveShadow=true;og.frustumCulled=false;
- for(let n=0;n<ON;){const x=(r()-.5)*47,z=(r()-.5)*47,d=Math.max(Math.abs(x),Math.abs(z));
-  if(d<10.4||(Math.abs(x)<7.8&&z<-9.8&&z>-15.4)||r()>Math.exp(-(d-10)/8))continue;
+function buildOuterGrass(){{const B=2*(YH+13.5),ON=Math.round(40000*(27*YH+182)/452),og=new THREE.InstancedMesh(gg,grass.material,ON),r=rng(5);og.receiveShadow=true;og.frustumCulled=false;
+ for(let n=0;n<ON;){const x=(r()-.5)*B,z=(r()-.5)*B,d=Math.max(Math.abs(x),Math.abs(z));
+  if(d<YH+.4||(Math.abs(x)<7.8&&z<-(YH-.2)&&z>-(YH+5.4))||r()>Math.exp(-(d-YH)/8))continue;
   const s=.8+r()*1;go.position.set(x,-.02,z);go.rotation.set((r()-.5)*.5,r()*6,(r()-.5)*.5);go.scale.set(1.9,s,1.9);go.updateMatrix();og.setMatrixAt(n,go.matrix);og.setColorAt(n,gc.setHSL(.22+r()*.06,.55,.28+r()*.18).convertSRGBToLinear());n++}
- og.instanceMatrix.needsUpdate=og.instanceColor.needsUpdate=true;scene.add(og)}
+ og.instanceMatrix.needsUpdate=og.instanceColor.needsUpdate=true;PARENT.add(og)}
 /* far lawn: cheap 3-triangle tufts out to the hedge line, skipping the street, house footprints and front paths */
-{const FN=70000,fg=new THREE.ConeGeometry(.05,.42,3,1,true).translate(0,.21,0),fa=fg.attributes.position,fc=new Float32Array(fa.count*3);
+{const FN=Math.round(70000*(102+2*DEL)*(94+DEL)/9588),fg=new THREE.ConeGeometry(.05,.42,3,1,true).translate(0,.21,0),fa=fg.attributes.position,fc=new Float32Array(fa.count*3);
  for(let i=0;i<fa.count;i++)fc.fill(.2+.8*Math.min(1,fa.getY(i)/.42),i*3,i*3+3);fg.setAttribute('color',new THREE.BufferAttribute(fc,3));
  const fm=new THREE.InstancedMesh(fg,grass.material,FN),r=rng(6),Y=new V3(0,1,0),v=new V3();fm.receiveShadow=true;fm.frustumCulled=false;
- const blocked=(x,z)=>{if(z>23.8&&z<37.8)return true;for(const[cx,cz,ry,w,d]of HFP){v.set(x-cx,0,z-cz).applyAxisAngle(Y,-ry);if((Math.abs(v.x)<w/2+1.2&&v.z>-d/2-1.2&&v.z<d/2+1.2)||(Math.abs(v.x)<.9&&v.z>0&&v.z<d/2+5.8))return true}return false};
- for(let n=0;n<FN;){const x=-51+r()*102,z=-33+r()*94;if(Math.max(Math.abs(x),Math.abs(z))<22||blocked(x,z))continue;
+ const blocked=(x,z)=>{if(z>23.8+DEL&&z<37.8+DEL)return true;for(const[cx,cz,ry,w,d]of HFP){v.set(x-cx,0,z-cz).applyAxisAngle(Y,-ry);if((Math.abs(v.x)<w/2+1.2&&v.z>-d/2-1.2&&v.z<d/2+1.2)||(Math.abs(v.x)<.9&&v.z>0&&v.z<d/2+5.8))return true}return false};
+ for(let n=0;n<FN;){const x=-(51+DEL)+r()*(102+2*DEL),z=-33+r()*(94+DEL);if(Math.max(Math.abs(x),Math.abs(z))<YH+12||blocked(x,z))continue;
   const s=.8+r()*.9;go.position.set(x,oh(x,z)-.02,z);go.rotation.set((r()-.5)*.4,r()*6,(r()-.5)*.4);go.scale.set(1.2+r()*.8,s,1.2+r()*.8);go.updateMatrix();fm.setMatrixAt(n,go.matrix);
   fm.setColorAt(n,gc.setHSL(.21+r()*.07,.55,.24+r()*.16).convertSRGBToLinear());n++}
- fm.instanceMatrix.needsUpdate=fm.instanceColor.needsUpdate=true;scene.add(fm)}
+ fm.instanceMatrix.needsUpdate=fm.instanceColor.needsUpdate=true;PARENT.add(fm)}}
 function clearGrass(x,z){let ch=0;go.position.set(0,-50,0);go.rotation.set(0,0,0);go.scale.setScalar(0);go.updateMatrix();
  for(let n=0;n<GN;n++){const q=gp[n];if(q.gone||Math.abs(q.x-x)>7||Math.abs(q.z-z)>7)continue;if(Math.hypot(q.x-x,q.z-z)<1.75||Math.abs(world.hAt(q.x,q.z)-q.y)>.05){q.gone=1;grass.setMatrixAt(n,go.matrix);ch=1}}if(ch)grass.instanceMatrix.needsUpdate=true}
 const rockG=(()=>{const g=new THREE.IcosahedronGeometry(1,1),p=g.attributes.position;
  for(let i=0;i<p.count;i++){const x=p.getX(i),y=p.getY(i),z=p.getZ(i),k=.82+.18*Math.sin(x*4.1+y*2.3)*Math.cos(z*3.7-y*1.9)+.1*Math.sin(x*9.3+z*7.1+y*5.2);p.setXYZ(i,x*k,y*k*.85,z*k)}
  g.computeVertexNormals();return g})();
-const RN=700,rocks=new THREE.InstancedMesh(rockG,mat(0xffffff,{roughness:.95}),RN);rocks.castShadow=rocks.receiveShadow=true;scene.add(rocks);
+const RNMAX=Math.round(700*36*36/400);let RN=700;/* buried rocks: 1.75 per m2 */
+const rocks=new THREE.InstancedMesh(rockG,mat(0xffffff,{roughness:.95}),RNMAX);rocks.castShadow=rocks.receiveShadow=true;scene.add(rocks);rocks.setColorAt(0,new THREE.Color());
 const rk=[];
 function setRock(n){const q=rk[n];go.position.set(q.x,q.y,q.z);go.rotation.set(q.a,q.b,q.c);go.scale.set(q.s*q.w,q.s,q.s*q.w);go.updateMatrix();rocks.setMatrixAt(n,go.matrix)}
-function buildRocks(){const r=rng(world.seed+2);rk.length=0;for(let n=0;n<RN;n++){const s=.07+Math.pow(r(),3)*.5;rk.push({x:(r()-.5)*19,y:-.15-Math.pow(r(),1.3)*5,z:(r()-.5)*19,a:r()*6,b:r()*6,c:r()*6,s,w:1+r()*.6});setRock(n);rocks.setColorAt(n,gc.setHSL(.08+r()*.05,.12+r()*.1,.25+r()*.3).convertSRGBToLinear())}
+function buildRocks(){const r=rng(world.seed+2);rk.length=0;for(let n=0;n<RN;n++){const s=.07+Math.pow(r(),3)*.5;rk.push({x:(r()-.5)*(S-1),y:-.15-Math.pow(r(),1.3)*5,z:(r()-.5)*(S-1),a:r()*6,b:r()*6,c:r()*6,s,w:1+r()*.6});setRock(n);rocks.setColorAt(n,gc.setHSL(.08+r()*.05,.12+r()*.1,.25+r()*.3).convertSRGBToLinear())}
+ /* a few small rocks are gems (own RNG stream so the rock layout is unchanged): over-bright colour, so they glow through the bloom */
+ const g=rng(world.seed+3);for(let n=0;n<RN;n++){const q=rk[n],a=g(),b=g();q.gem=0;if(a<GEM_RATE&&q.s<=.3){q.s=Math.max(q.s,.1);q.gem=b<.6?1:b<.9?2:3;setRock(n);rocks.setColorAt(n,gc.setRGB(...GEM[q.gem][2]))}}
  rocks.instanceMatrix.needsUpdate=rocks.instanceColor.needsUpdate=true}
-function settleRocks(x,z){let ch=0;for(let n=0;n<RN;n++){const q=rk[n];if(Math.abs(q.x-x)>9||Math.abs(q.z-z)>9)continue;const h=world.hAt(q.x,q.z);if(q.y>h+q.s*.2){q.y=h+q.s*.3;setRock(n);ch=1}}if(ch)rocks.instanceMatrix.needsUpdate=true}
+function settleRocks(x,z){let ch=0;for(let n=0;n<RN;n++){const q=rk[n];if(q.held||Math.abs(q.x-x)>9||Math.abs(q.z-z)>9)continue;const h=world.hAt(q.x,q.z);if(q.y>h+q.s*.2){q.y=h+q.s*.3;setRock(n);ch=1}}if(ch)rocks.instanceMatrix.needsUpdate=true}
 let pipeG;
 function buildBuried(){if(pipeG)scene.remove(pipeG);pipeG=new THREE.Group();const add=(m,x,y,z)=>{m.position.set(x,y,z);m.castShadow=m.receiveShadow=true;pipeG.add(m);return m};
  const cu=mat(0xc2733a,{roughness:.4,metalness:.35}),rust=mat(0x6a2f12);
@@ -294,6 +350,22 @@ const sh=new THREE.Group();{
  shov.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new V3().crossVectors(dh,nn).normalize(),dh,nn));
  shov.position.copy(dh).multiplyScalar(-1.2);
  sh.add(shov);cam.add(sh);sh.visible=false}
+/* ---------- hotbar: 1 shovel, 2 ground probe, 3 flashlight, 4 garden light (3 and 4 unlock at the workbench). Left click uses the selected item. ---------- */
+const hp=new THREE.Group(),hf=new THREE.Group(),hl=new THREE.Group(),hfLens=new THREE.MeshBasicMaterial({color:0x555555}),hlLens=new THREE.MeshBasicMaterial({color:new THREE.Color(1.3,1.05,.55)});
+{const st=mat(0xaab4bc,{roughness:.4,metalness:.5}),blk=mat(0x2a2d31,{roughness:.5,metalness:.6}),glv=mat(0x7a5530,{roughness:.9}),yel=mat(0xf0b400,{roughness:.45,metalness:.3}),M=(g,m,x=0,y=0,z=0)=>{const o=new THREE.Mesh(g,m);o.position.set(x,y,z);return o},fist=()=>{const f=M(new THREE.SphereGeometry(.058,12,9),glv);f.scale.set(1.25,1,1.1);return f};
+ /* probe: a long steel rod with a T-handle, tip pointing down */
+ hp.add(M(new THREE.CylinderGeometry(.011,.011,1.05,8),st,0,-.56),M(new THREE.ConeGeometry(.022,.12,8).rotateX(Math.PI),st,0,-1.15),M(new THREE.CylinderGeometry(.018,.018,.26,10).rotateZ(Math.PI/2),blk),fist());
+ /* flashlight: held pointing forward */
+ hf.add(M(new THREE.CylinderGeometry(.034,.034,.2,12).rotateX(Math.PI/2),blk,0,0,-.1),M(new THREE.CylinderGeometry(.05,.037,.07,12).rotateX(Math.PI/2),yel,0,0,-.235),M(new THREE.CylinderGeometry(.024,.024,.03,10).rotateX(Math.PI/2),yel,0,.04,-.08),
+  M(new THREE.CircleGeometry(.043,14).rotateY(Math.PI),hfLens,0,0,-.272),fist());
+ /* garden light: the yellow work-light head, carried by its handle */
+ hl.add(M(new THREE.BoxGeometry(.26,.17,.08),yel,0,.1,-.1),M(new THREE.BoxGeometry(.29,.2,.025),blk,0,.1,-.045),M(new THREE.PlaneGeometry(.22,.13).rotateY(Math.PI),hlLens,0,.1,-.142),
+  M(new THREE.CylinderGeometry(.014,.014,.12,8),blk,0,.0,-.1),fist());
+ for(const g of[hp,hf,hl]){g.traverse(o=>{if(o.isMesh)o.castShadow=false});g.visible=false;cam.add(g)}}
+const HB=[{n:'Shovel',ok:()=>1},{n:'Ground probe',ok:()=>1},{n:'Flashlight',ok:()=>Prog.up.lantern>0,need:'Buy a flashlight at the workbench'},{n:'Garden light',ok:()=>Prog.up.lamps>0,need:'Buy garden lights at the workbench'}];
+let sel=0,want=0,swapK=0,pa=0;/* sel = item in hand, want = item being raised, swapK = lowering/raising animation, pa = probe-push animation */
+function hbShow(){document.querySelectorAll('.hb').forEach((e,i)=>{e.classList.toggle('on',i===want);e.classList.toggle('lock',!HB[i].ok())});$('hbName').textContent=HB[want].n}
+function hbSelect(i){if(i===want||i<0||i>=HB.length)return;if(!HB[i].ok()){toast(HB[i].need);return}want=i;holding=false;hbShow()}
 /* ---------- push mower: deck, wheels, engine, bag, handle. Spawned near the house path each yard ---------- */
 const mower=new THREE.Group();{const body=mat(0xc0392b,{roughness:.55,metalness:.15}),steel2=mat(0xc8d0d6,{roughness:.35,metalness:.6}),tyre=mat(0x222222,{roughness:.9});
  const deck=new THREE.Mesh(new THREE.CylinderGeometry(.42,.45,.16,20),body);deck.position.y=.26;mower.add(deck);
@@ -304,8 +376,9 @@ const mower=new THREE.Group();{const body=mat(0xc0392b,{roughness:.55,metalness:
  const grip=new THREE.Mesh(new THREE.CylinderGeometry(.016,.016,.34,8),mat(0x111111,{roughness:.8}));grip.position.set(0,1.05,-1.02);grip.rotation.z=Math.PI/2;mower.add(grip);
  mower.wheels=[];for(const[wx,wz]of[[-.34,.28],[.34,.28],[-.34,-.28],[.34,-.28]]){const w=new THREE.Mesh(new THREE.CylinderGeometry(wz<0?.11:.17,wz<0?.11:.17,.06,12),tyre);w.rotation.z=Math.PI/2;w.position.set(wx,.17,wz);mower.add(w);mower.wheels.push(w)}
  [deck,chute,eng,bag].forEach(m=>{m.castShadow=m.receiveShadow=true});scene.add(mower)}
-let mowerHeld=false,mowerOn=false,mowerOwner=null,mowerTarget=null,clipM,mowX,mowZ;/* mowerHeld: I own it; mowerOwner: id of whoever does (co-op) */
-function placeMower(){mowerHeld=false;mowerOn=false;mowerOwner=null;mowerTarget=null;mowX=undefined;mowQ.length=0;mower.position.set(2.4,world.hAt(2.4,-7.4),-7.4);mower.rotation.set(0,0,0);if(clipM){clipM.gain.gain.value=0;clipM.blade.gain.value=0}}
+const MTURN=.8;/* max mower turn rate while pushed, rad/s */
+let mh=0,mowerHeld=false,mowerOn=false,mowerOwner=null,mowerTarget=null,clipM,mowX,mowZ;/* mowerHeld: I own it; mowerOwner: id of whoever does (co-op) */
+function placeMower(){mowerHeld=false;mowerOn=false;mowerOwner=null;mowerTarget=null;mowX=undefined;mowQ.length=0;mower.position.set(MOWS[0],world.hAt(MOWS[0],MOWS[1]),MOWS[1]);mower.rotation.set(0,0,0);if(clipM){clipM.gain.gain.value=0;clipM.blade.gain.value=0}}
 /* ---------- carried rock (drawn in the hands; the instance stays hidden in `rocks`) ---------- */
 let carry=-1,carryF=-1,carryFM=null;const carryM=new THREE.Mesh(rockG,mat(0xffffff,{roughness:.95}));carryM.castShadow=true;carryM.visible=false;cam.add(carryM);
 const handsBusy=()=>mowerHeld||carry>=0||carryF>=0;
@@ -349,9 +422,9 @@ const rtC=new THREE.WebGLMultisampleRenderTarget(2,2,Object.assign({type:TY},LF)
  rtB1=new THREE.WebGLRenderTarget(2,2,Object.assign({type:TY,depthBuffer:false},LF)),rtB2=new THREE.WebGLRenderTarget(2,2,Object.assign({type:TY,depthBuffer:false},LF));rtC.samples=4;
 const qs=new THREE.Scene(),qc=new THREE.OrthographicCamera(-1,1,1,-1,0,1),quad=new THREE.Mesh(new THREE.PlaneGeometry(2,2));quad.frustumCulled=false;qs.add(quad);
 const sm=(fs,u)=>new THREE.ShaderMaterial({uniforms:u,vertexShader:'varying vec2 v;void main(){v=uv;gl_Position=vec4(position.xy,0.,1.);}',fragmentShader:'varying vec2 v;'+fs,depthTest:false,depthWrite:false}),pass=(m,t)=>{quad.material=m;R.setRenderTarget(t);R.render(qs,qc)};
-const bright=sm('uniform sampler2D t;void main(){vec3 c=texture2D(t,v).rgb;float l=max(c.r,max(c.g,c.b));gl_FragColor=vec4(c*smoothstep(.75,1.7,l),1.);}',{t:{value:null}}),
+const bright=sm('uniform sampler2D t;void main(){vec3 c=texture2D(t,v).rgb;float l=max(c.r,max(c.g,c.b));gl_FragColor=vec4(c*smoothstep(.95,2.2,l),1.);}',{t:{value:null}}),
  blur=sm('uniform sampler2D t;uniform vec2 d;void main(){vec3 s=texture2D(t,v).rgb*.227;s+=(texture2D(t,v+d).rgb+texture2D(t,v-d).rgb)*.1946;s+=(texture2D(t,v+d*2.).rgb+texture2D(t,v-d*2.).rgb)*.1216;s+=(texture2D(t,v+d*3.).rgb+texture2D(t,v-d*3.).rgb)*.054;s+=(texture2D(t,v+d*4.).rgb+texture2D(t,v-d*4.).rgb)*.0162;gl_FragColor=vec4(s,1.);}',{t:{value:null},d:{value:new THREE.Vector2()}}),
- comp=sm(`uniform sampler2D tC,tD,tB;uniform vec2 sun,res,tx;uniform float sI,asp,nr,fr,tm;
+ comp=sm(`uniform sampler2D tC,tD,tB;uniform vec2 sun,res,tx;uniform float sI,asp,nr,fr,tm,uN;
 const vec4 UF=(255./256.)/vec4(16777216.,65536.,256.,1.);
 float ld(vec2 u){float z=dot(texture2D(tD,u),UF)*2.-1.;return 2.*nr*fr/(fr+nr-z*(fr-nr));}
 vec3 vp(vec2 u){float z=ld(u);return vec3((u*2.-1.)*vec2(asp,1.)*.7*z,-z);}
@@ -367,26 +440,104 @@ void main(){
  vec3 bl=texture2D(tB,v).rgb;vec2 dir=(sun-v)/20.*.95,u=v;vec3 ry=vec3(0.);float il=1.;
  for(int i=0;i<20;i++){u+=dir;ry+=texture2D(tB,u).rgb*il;il*=.93;}
  vec2 q=v-.5;vec3 col=vec3(texture2D(tC,v+q*.0012).r,texture2D(tC,v).g,texture2D(tC,v-q*.0012).b);
- col*=mix(1.,ao,.9);col+=bl*.5+ry*sI*.07;col*=1.25;
+ col*=mix(1.,ao,.9);col+=bl*.38+ry*sI*.07;col*=1.25*(1.+.25*uN);col=mix(col,vec3(dot(col,vec3(.3,.59,.11)))*vec3(.8,.95,1.3),uN*.5);/* night: cooler, slightly desaturated, a touch brighter so it is dark but readable */
  col=(col*(2.51*col+.03))/(col*(2.43*col+.59)+.14);
  float l=dot(col,vec3(.299,.587,.114));col=mix(vec3(l),col,1.2);col*=mix(vec3(.94,1.,1.08),vec3(1.07,1.,.9),smoothstep(.1,.8,l));
  col=pow(max(col,0.),vec3(1./2.2));col=mix(col,col*col*(3.-2.*col),.3);
  col*=1.-.4*smoothstep(.4,1.05,length(q*vec2(asp,1.)*1.15));col+=(hs(v*res+tm)-.5)*.018;
- gl_FragColor=vec4(col,1.);}`,{tC:{value:null},tD:{value:null},tB:{value:null},sun:{value:new THREE.Vector2()},res:{value:new THREE.Vector2(1,1)},tx:{value:new THREE.Vector2()},sI:{value:0},asp:{value:1},nr:{value:cam.near},fr:{value:cam.far},tm:{value:0}});
+ gl_FragColor=vec4(col,1.);}`,{tC:{value:null},tD:{value:null},tB:{value:null},sun:{value:new THREE.Vector2()},res:{value:new THREE.Vector2(1,1)},tx:{value:new THREE.Vector2()},sI:{value:0},asp:{value:1},nr:{value:cam.near},fr:{value:cam.far},tm:{value:0},uN:{value:0}});
 const depthMat=new THREE.MeshDepthMaterial({depthPacking:THREE.RGBADepthPacking}),sdir=sun.position.clone().normalize(),sv=new V3();
 const gl=cvTex(128,128,(x,w,h)=>{const g=x.createRadialGradient(64,64,0,64,64,64);g.addColorStop(0,'rgba(255,255,255,1)');g.addColorStop(.15,'rgba(255,240,200,.8)');g.addColorStop(1,'rgba(255,200,120,0)');x.fillStyle=g;x.fillRect(0,0,w,h)});
 const sunS=[[70,.9,.7,.4],[9,8,7,5]].map(([z,r,g,b])=>{const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:gl,color:new THREE.Color(r,g,b),blending:THREE.AdditiveBlending,depthWrite:false,transparent:true,fog:false}));sp.scale.setScalar(z);scene.add(sp);return sp});
+/* ---------- day / night: one clock drives sun, moon, sky, fog, ambient and the night lights ---------- */
+const DAY_LEN=600,DAY0=.27;/* seconds per full day; start time (0 = midnight, .5 = noon). About 3.5 of the 10 minutes are night */
+let dayT=DAY0,dayF=1,nightF=0,sunVis=1;
+const sstep=(a,b,x)=>{x=Math.min(1,Math.max(0,(x-a)/(b-a)));return x*x*(3-2*x)},_v=new V3(),_c=new THREE.Color(),
+ CL={hs:lin(0xbcd6ff),hsN:new THREE.Color(.05,.08,.2),hg:lin(0x5a4630),hgN:new THREE.Color(.03,.03,.05),sun:lin(0xfff1d6),warm:lin(0xff9450),moon:lin(0x9db8ff),fog:lin(0xcfe0e8),fogN:new THREE.Color(.012,.022,.06),fogW:lin(0xe8a070)};
+const moon=(()=>{const t=cvTex(128,128,x=>{const g=x.createRadialGradient(64,64,18,64,64,64);g.addColorStop(0,'rgba(180,200,255,.35)');g.addColorStop(1,'rgba(180,200,255,0)');x.fillStyle=g;x.fillRect(0,0,128,128);
+  x.fillStyle='#e8eefc';x.beginPath();x.arc(64,64,17,0,6.3);x.fill();x.fillStyle='rgba(150,165,200,.45)';for(const[a,b,r]of[[58,58,5],[70,66,4],[62,72,3]]){x.beginPath();x.arc(a,b,r,0,6.3);x.fill()}});
+ const m=new THREE.Sprite(new THREE.SpriteMaterial({map:t,color:new THREE.Color(1.5,1.6,1.9),depthWrite:false,transparent:true,fog:false}));m.scale.setScalar(26);m.visible=false;scene.add(m);return m})(),
+ stars=(()=>{const n=700,p=new Float32Array(n*3),r=rng(99);for(let i=0;i<n;i++){const a=r()*6.283,y=.04+r()*.96,s=Math.sqrt(1-y*y);p[i*3]=Math.cos(a)*s*190;p[i*3+1]=y*190;p[i*3+2]=Math.sin(a)*s*190}
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(p,3));
+  const m=new THREE.Points(g,new THREE.PointsMaterial({color:0xffffff,size:1.8,sizeAttenuation:false,transparent:true,opacity:0,fog:false,depthWrite:false}));m.frustumCulled=false;m.visible=false;scene.add(m);return m})();
+/* lights exist from the start and only change intensity: adding/removing a light recompiles every material in three r128 */
+const porchL=new THREE.PointLight(lin(0xffc880),0,12,1.5),benchL=new THREE.PointLight(lin(0xffc880),0,11,1.5);
+porchL.position.set(1.4,2,-9.2);benchL.position.set(BENCH[0]+.7,2.1,BENCH[1]+.5);scene.add(porchL,benchL);
+function applyDay(){
+ const a=(dayT-.25)*6.2832,cs=Math.cos(a),sn=Math.sin(a);sdir.set(cs*.93,sn*.9+.35,cs*.37-sn*.2).normalize();/* bias .35 keeps the sun up for ~63% of the day */
+ const ny=sdir.y,df=sstep(-.1,.3,ny),warm=sstep(.5,.05,ny)*df;dayF=df;nightF=1-df;sunVis=sstep(-.08,.05,ny);
+ /* a single directional light: the sun by day, a dim blue moon by night; the swap happens while both are ~0 so nothing pops */
+ sun.position.copy(ny>=0?sdir:_v.copy(sdir).negate()).multiplyScalar(19.2);
+ sun.intensity=ny>=0?1.8*sstep(0,.3,ny):.34*sstep(0,.3,-ny);sun.color.copy(ny>=0?CL.sun:CL.moon);if(ny>=0)sun.color.lerp(CL.warm,warm);
+ hemi.color.copy(CL.hsN).lerp(CL.hs,df);hemi.groundColor.copy(CL.hgN).lerp(CL.hg,df);hemi.intensity=.22+.48*df;
+ scene.fog.color.copy(CL.fogN).lerp(CL.fog,df).lerp(CL.fogW,warm*.4);
+ skyMat.color.setRGB(.025,.04,.1).lerp(_c.setRGB(1,1,1),df).lerp(_c.setRGB(1,.72,.56),warm*.55);
+ stars.material.opacity=nightF*nightF;stars.visible=nightF>.02;stars.rotation.y=dayT*6.2832;
+ const mv=sstep(.02,-.2,ny);moon.material.opacity=mv;moon.visible=mv>.01;sunS.forEach(q=>q.material.opacity=sunVis);
+ comp.uniforms.uN.value=nightF;
+ /* night lights: porch + workbench lamp, windows that switch on one by one, street bulbs */
+ porchL.intensity=1.3*nightF;benchL.intensity=1.6*nightF;
+ for(const m of GLASS)m.emissiveIntensity=sstep(m.userData.th,m.userData.th+.25,nightF)*1.1;
+ for(const m of LAMPS)m.color.setRGB(3.2,2.6,1.5).multiplyScalar(.12+.88*nightF)}
+/* ---------- garden lights: bought at the workbench (Prog.up.lamps = how many you own), set on the ground (G) and wired to the wall socket ---------- */
+const SOCK0=[5.9,-9.9],SOCK=[5.9,-9.9],CABLE_MAX=50,GL_R=7,GLN=4;/* socket on the house front wall (below the right shutter); cable reach and lit radius in m; max lamps */
+let glOn=false,glK=0,glDirty=false;const GS=Array(GLN).fill(null);/* placed lamps: {x,z} or null */
+const glBulbs=[0,1,2,3].map(()=>new THREE.MeshBasicMaterial({color:new THREE.Color(5,4,2.4)})),glLights=[],glObj=[],glCab=[],glCab2=[],glSpark=[],glSparkM=new THREE.MeshBasicMaterial({color:new THREE.Color(6,5,3)}),sockLed=new THREE.MeshBasicMaterial({color:new THREE.Color(.5,.05,.04)});
+/* outdoor outlet plate with a rocker switch and a status LED (red = off, green = on) */
+PARENT=houseG;box(.17,.28,.04,0xe8e4d8,SOCK0[0],1.0,-9.98,{roughness:.5});box(.075,.12,.03,0x22252a,SOCK0[0],1.06,-9.955);box(.1,.07,.02,0xcfcbc0,SOCK0[0],.93,-9.955);
+{const led=new THREE.Mesh(new THREE.SphereGeometry(.014,8,6),sockLed);led.position.set(SOCK0[0]+.055,1.11,-9.955);houseG.add(led)}PARENT=scene;
+/* construction-site work light: yellow tripod stand, tall mast, tilted flood-light head with a grille */
+const GL_H=2.3,GL_I=.85;/* GL_I = work-light brightness *//* mast height in m */
+{const gm=(g,c,o)=>{const m=new THREE.Mesh(g,mat(c,o));m.castShadow=true;return m},paint={roughness:.45,metalness:.3},steel={roughness:.5,metalness:.6},Y=0xf0b400,UP=new V3(0,1,0);
+ for(let i=0;i<GLN;i++){const g=new THREE.Group();
+  g.add(gm(new THREE.CylinderGeometry(.03,.036,GL_H,8).translate(0,GL_H/2,0),Y,paint),gm(new THREE.CylinderGeometry(.05,.05,.1,8).translate(0,.95,0),0x2a2d31,steel),gm(new THREE.CylinderGeometry(.045,.045,.06,8).translate(0,GL_H,0),0x2a2d31,steel));
+  for(let k=0;k<3;k++){const a=k*Math.PI*2/3+.5,r=.62,e=new V3(Math.cos(a)*r,0,Math.sin(a)*r),s0=new V3(0,.95,0),d=e.clone().sub(s0),len=d.length(),leg=gm(new THREE.CylinderGeometry(.017,.017,len,6),Y,paint);
+   leg.position.copy(s0).add(e).multiplyScalar(.5);leg.quaternion.setFromUnitVectors(UP,d.normalize());g.add(leg);
+   const foot=gm(new THREE.CylinderGeometry(.045,.045,.025,8),0x1d1f22,steel);foot.position.set(e.x,.012,e.z);g.add(foot)}
+  const head=new THREE.Group();head.position.set(0,GL_H+.2,0);head.rotation.x=.42;
+  head.add(gm(new THREE.BoxGeometry(.5,.34,.15),Y,paint),gm(new THREE.BoxGeometry(.54,.38,.03).translate(0,0,-.075),0x2a2d31,steel),
+   gm(new THREE.BoxGeometry(.54,.04,.2).translate(0,.19,.05),0x2a2d31,steel));
+  const lens=new THREE.Mesh(new THREE.PlaneGeometry(.42,.26).translate(0,0,.077),glBulbs[i]);head.add(lens);
+  for(let k=-2;k<=2;k++)head.add(gm(new THREE.BoxGeometry(.012,.28,.012).translate(k*.09,0,.088),0x1d1f22,steel));
+  const yk=gm(new THREE.CylinderGeometry(.02,.02,.1,6).translate(0,-.08,0),0x2a2d31,steel);g.add(yk);yk.position.set(0,GL_H+.1,0);
+  g.add(head);g.visible=false;scene.add(g);glObj.push(g);
+  const L=new THREE.PointLight(lin(0xffd49a),0,11,1.5);L.position.set(0,-50,0);scene.add(L);glLights.push(L);
+  const cm=mat(0x141414,{roughness:.6}),c=new THREE.Mesh(new THREE.BufferGeometry(),cm),c2=new THREE.Mesh(new THREE.BufferGeometry(),cm),sp=new THREE.Mesh(new THREE.SphereGeometry(.05,8,6),glSparkM);
+  [c,c2,sp].forEach(m=>{m.visible=false;m.frustumCulled=false;scene.add(m)});glCab.push(c);glCab2.push(c2);glSpark.push(sp)}}
+/* cable helpers: the cable lies on the ground in a straight line from just below the socket to the lamp */
+const cabN=q=>Math.max(5,Math.ceil(Math.hypot(q.x-SOCK[0],q.z-SOCK[1]-.7)/.6)),cabCI=(q)=>Math.max(1,Math.min(cabN(q)-3,Math.round(q.cut*cabN(q))));
+function cabSeg(x,z,i){const q=GS[i],x0=SOCK[0],z0=SOCK[1]+.7,dx=q.x-x0,dz=q.z-z0;let t=((x-x0)*dx+(z-z0)*dz)/(dx*dx+dz*dz||1e-6);t=Math.max(0,Math.min(1,t));return{t,d:Math.hypot(x0+dx*t-x,z0+dz*t-z)}}
+function cutPos(i){const q=GS[i],n=cabN(q),t=(cabCI(q)+.5)/n,x0=SOCK[0],z0=SOCK[1]+.7;return[x0+(q.x-x0)*t,z0+(q.z-z0)*t]}
+/* a cut cable (q.cut = fraction along the run) is drawn as two pieces with a gap and a sparking end; the lamp behind it goes dark */
+function glCable(i){const m=glCab[i],m2=glCab2[i],q=GS[i];m.geometry.dispose();m2.geometry.dispose();m.visible=m2.visible=glSpark[i].visible=false;if(!q)return;
+ const pts=[new V3(SOCK[0],.93,SOCK[1]+.05),new V3(SOCK[0],.3,SOCK[1]+.3)],x0=SOCK[0],z0=SOCK[1]+.7,n=cabN(q),tube=a=>new THREE.TubeGeometry(new THREE.CatmullRomCurve3(a),a.length*3,.014,5);
+ for(let k=0;k<=n;k++){const t=k/n,x=x0+(q.x-x0)*t,z=z0+(q.z-z0)*t;pts.push(new V3(x,world.hAt(x,z)+.03,z))}
+ if(q.cut==null){m.geometry=tube(pts);m.visible=true;return}
+ const ci=cabCI(q);m.geometry=tube(pts.slice(0,ci+3));m.visible=true;m2.geometry=tube(pts.slice(ci+3));m2.visible=true;
+ const a=pts[ci+2],b=pts[ci+3];glSpark[i].position.set((a.x+b.x)/2,(a.y+b.y)/2+.04,(a.z+b.z)/2);glSpark[i].visible=true}
+function glPlace(i,x,z,cut){GS[i]={x,z,cut:cut==null?null:cut,k:0,pend:0};glObj[i].visible=true;glObj[i].rotation.y=Math.atan2(-x,-z);glCable(i)}
+function glPick(i){GS[i]=null;glObj[i].visible=false;glLights[i].position.set(0,-50,0);glLights[i].intensity=0;glCable(i)}
+function glReset(){for(let i=0;i<GLN;i++)if(GS[i])glPick(i);glOn=false}
+const glLit=(x,z)=>glOn&&GS.some(q=>q&&q.cut==null&&Math.hypot(q.x-x,q.z-z)<GL_R);
+function zap(i){nz('highpass',3200,.18,.4);sweep('bandpass',3000,500,.3,.35)}
+function lampTick(dt){if(glDirty){glDirty=false;GS.forEach((q,i)=>q&&glCable(i))}
+ glK+=((glOn?1:0)-glK)*Math.min(1,dt*8);sockLed.color.setRGB(.5*(1-glK)+.1,.05+1.6*glK,.04+.2*glK);
+ const mm=mowerHeld&&mowerOn&&state==='play'&&!paused;
+ for(let i=0;i<GLN;i++){const q=GS[i];if(!q){continue}const y=world.hAt(q.x,q.z),live=glOn&&q.cut==null;
+  q.k+=((live?1:0)-q.k)*Math.min(1,dt*8);glObj[i].position.set(q.x,y,q.z);glLights[i].position.set(q.x,y+GL_H+.2,q.z);glLights[i].intensity=GL_I*q.k;glBulbs[i].color.setRGB(2.6,2.1,1.2).multiplyScalar(.1+.9*q.k);
+  if(q.cut!=null){const sp=glSpark[i];sp.visible=Math.random()<(glOn?.55:.12);sp.scale.setScalar(.6+Math.random()*1.2)}
+  else if(mm&&T>q.pend){const c=cabSeg(mower.position.x,mower.position.z,i);if(c.d<.5){q.pend=T+1.5;Net.send({type:'cable_cut',i,t:c.t,by:ME})}}}}
 window.fxResize=(w,h)=>{rtC.setSize(w,h);rtD.setSize(w>>1,h>>1);rtB1.setSize(w>>2,h>>2);rtB2.setSize(w>>2,h>>2);const u=comp.uniforms;u.res.value.set(w,h);u.tx.value.set(2/w,2/h);u.asp.value=w/h};
 function fxRender(){
- sunS.forEach(q=>q.position.copy(cam.position).addScaledVector(sdir,170));
+ sunS.forEach(q=>q.position.copy(cam.position).addScaledVector(sdir,170));moon.position.copy(cam.position).addScaledVector(sdir,-170);
  R.setRenderTarget(rtC);R.setClearColor(0x000000,1);R.clear(true,true,true);R.render(scene,cam);
- const os=[sh,carryM,...(carryFM?[carryFM]:[]),...sunS,...rings.map(q=>q.m),...Net.tags()],vs=os.map(o=>o.visible);os.forEach(o=>o.visible=false);
+ const os=[...sunS,moon,stars,...rings.map(q=>q.m),...Net.tags()],vs=os.map(o=>o.visible);os.forEach(o=>o.visible=false);
  R.shadowMap.autoUpdate=false;scene.overrideMaterial=depthMat;R.setRenderTarget(rtD);R.setClearColor(0xffffff,1);R.clear(true,true,true);R.render(scene,cam);
  scene.overrideMaterial=null;R.setClearColor(0x000000,1);R.shadowMap.autoUpdate=true;os.forEach((o,i)=>o.visible=vs[i]);
  bright.uniforms.t.value=rtC.texture;pass(bright,rtB1);
  for(const k of[1.5,3]){blur.uniforms.t.value=rtB1.texture;blur.uniforms.d.value.set(k/rtB1.width,0);pass(blur,rtB2);blur.uniforms.t.value=rtB2.texture;blur.uniforms.d.value.set(0,k/rtB1.height);pass(blur,rtB1)}
  const u=comp.uniforms;sv.copy(cam.position).addScaledVector(sdir,100).project(cam);u.sun.value.set(sv.x*.5+.5,sv.y*.5+.5);
- u.sI.value=Math.max(0,new V3(0,0,-1).applyQuaternion(cam.quaternion).dot(sdir)+.2);u.tC.value=rtC.texture;u.tD.value=rtD.texture;u.tB.value=rtB1.texture;u.tm.value=performance.now()/1000%100;
+ u.sI.value=Math.max(0,new V3(0,0,-1).applyQuaternion(cam.quaternion).dot(sdir)+.2)*sunVis;u.tC.value=rtC.texture;u.tD.value=rtD.texture;u.tB.value=rtB1.texture;u.tm.value=performance.now()/1000%100;
  pass(comp,null)}
 resize();
 
@@ -396,23 +547,43 @@ const keys={},free=(x,z)=>obst.every(o=>Math.hypot(x-o.x,z-o.z)>o.r+.3);
 function show(id){document.querySelectorAll('.scr').forEach(e=>e.classList.toggle('show',e.id===id))}
 function toast(t){const e=$('toast');e.textContent=t;e.style.opacity=1;toastT=3.5}
 const rndSeed=()=>Math.random()*1e9|0,menuScr=()=>{const p=Net.pend;Net.pend='';return p?'mp':'menu'};
-function newGame(seed){world=new World(seed==null?rndSeed():seed);Net.reset();buildBuried();buildRocks();dropCarry(true);buildFinds();sync();buildGrass();placeMower();parts.forEach(q=>scene.remove(q.m));parts.length=0;rings.forEach(q=>scene.remove(q.m));rings.length=0;geyser=false;px=0;pz=6;yaw=0;pitch=-.35;ey=world.hAt(0,6)+1.7;pc=0;elapsed=0;$('dg').textContent=0;$('sc').textContent=0;$('tm').textContent='0:00';$('pr').textContent='Probe ready — press F or right-click'}
+let yardBuilt=false,wantSize=(()=>{try{const v=+localStorage.getItem('burstSize');if(SIZES.includes(v))return v}catch(e){}return 20})();/* wantSize: what the next yard will be (menu choice, remembered) */
+function setYardSize(s){if(!SIZES.includes(s))s=SIZES[0];if(yardBuilt&&s===S)return;
+ layout(s);GN=Math.round(26000*s*s/400);RN=Math.round(700*s*s/400);grass.count=GN;rocks.count=RN;mown=new Uint8Array(MG*MG);
+ houseG.position.z=-DEL;porchL.position.set(1.4,2,-9.2-DEL);benchL.position.set(BENCH[0]+.7,2.1,BENCH[1]+.5);
+ buildTerrain();buildYard();buildOuter();yardBuilt=true}
+function newGame(seed,size){Prog=freshProg();flashOn=false;sel=want=0;swapK=0;saveProg();/* every new yard starts from scratch: no points, no upgrades */setYardSize(size||(yardBuilt?S:wantSize));world=new World(seed==null?rndSeed():seed);Net.reset();glReset();dayT=DAY0;buildBuried();buildRocks();dropCarry(true);buildFinds();sync();buildGrass();placeMower();parts.forEach(q=>scene.remove(q.m));parts.length=0;rings.forEach(q=>scene.remove(q.m));rings.length=0;geyser=false;px=0;pz=YH-4;yaw=0;pitch=-.35;ey=world.hAt(0,pz)+1.7;pc=0;elapsed=0;setShop(false);hudPts();$('tm').textContent='0:00'}
 function lock(){try{cv.requestPointerLock()}catch(e){}setTimeout(()=>{fallback=!document.pointerLockElement},250)}
 let seenHelp=false;try{seenHelp=localStorage.getItem('burstHelp')==='1'}catch(e){}
-function startPlay(seed){audio();state='play';newGame(seed);$('hud').style.display='block';sh.visible=true;
+function startPlay(seed,size){audio();state='play';newGame(seed,size||wantSize);$('hud').style.display='block';sh.visible=true;
  /* co-op: entering is async, so there is no click to grab the pointer with; always land on help/pause and let the player click */
  if(Net.mode!=='solo'){paused=true;holding=dragging=false;show(seenHelp?'pause':'help');return}
  if(seenHelp){paused=false;show(null);lock()}else{paused=true;holding=dragging=false;show('help')}}
 $('bGot').onclick=()=>{seenHelp=true;try{localStorage.setItem('burstHelp','1')}catch(e){}paused=false;show(null);lock()};
-function toMenu(){Net.leave();state='menu';paused=false;geyser=false;document.exitPointerLock?.();$('hud').style.display='none';sh.visible=false;show('menu')}
-function tryDig(){if(state!=='play'||paused||!aim||cd>0||Math.abs(aim.x)>8.6||Math.abs(aim.z)>8.6||handsBusy())return;if(!isMown(aim.x,aim.z)){toast('Mow the grass first');return}cd=.8;swing=1;Net.send({type:'dig',x:aim.x,z:aim.z,by:ME})}
+function toMenu(){Net.leave();setShop(false);state='menu';paused=false;geyser=false;document.exitPointerLock?.();$('hud').style.display='none';sh.visible=hp.visible=hf.visible=hl.visible=false;show('menu');if(wantSize!==S)newGame(undefined,wantSize)}
+const canSee=()=>dayF>.45||(flashOn&&Prog.up.lantern>0)||(!!aim&&glLit(aim.x,aim.z));
+function lampKey(){if(!Prog.up.lamps){toast('Buy garden lights at the workbench');return}
+ if(aim){let bi=-1,bd=2.5;GS.forEach((q,i)=>{if(!q)return;const d=Math.hypot(q.x-aim.x,q.z-aim.z);if(d<bd){bd=d;bi=i}});if(bi>=0){Net.send({type:'lamp_pick',i:bi,by:ME});return}}
+ const fi=GS.findIndex((q,i)=>!q&&i<Prog.up.lamps);if(fi<0){toast('All your lights are out — aim at one and press G to pick it up');return}
+ if(!aim){toast('Aim at the ground to set a light down');return}
+ if(Math.hypot(aim.x-SOCK[0],aim.z-SOCK[1])>CABLE_MAX){toast(`Too far — the cable only reaches ${CABLE_MAX} m from the socket`);return}
+ Net.send({type:'lamp_place',i:fi,x:aim.x,z:aim.z,by:ME})}
+function tryDig(){if(state!=='play'||paused||!aim||cd>0||Math.abs(aim.x)>YH-1.4||Math.abs(aim.z)>YH-1.4||handsBusy())return;if(!isMown(aim.x,aim.z)){toast('Mow the grass first');return}
+ if(!canSee()){toast(Prog.up.lantern?'Too dark to dig — press L for your flashlight':'Too dark to dig — buy a flashlight at the workbench');return}cd=.8;swing=1;
+ for(let i=0;i<GLN;i++){const q=GS[i];if(!q||q.cut!=null)continue;const c=cabSeg(aim.x,aim.z,i);if(c.d<.4){Net.send({type:'cable_cut',i,t:c.t,by:ME});break}}/* the shovel goes through the cable */
+ Net.send({type:'dig',x:aim.x,z:aim.z,by:ME})}
 /* E: drop what you're holding, else grab the mower, else the nearest exposed rock, else a find */
 function useE(){if(state!=='play'||paused)return;audio();
+ if(shopOpen){setShop(false);return}
  if(mowerHeld){Net.flushMow();Net.send({type:'mower_drop',x:mower.position.x,z:mower.position.z,ry:mower.rotation.y,on:mowerOn?1:0,by:ME});return}
- if(carry>=0){if(aim)Net.send({type:'rock_place',n:carry,x:aim.x,z:aim.z,by:ME});else toast('Aim at the ground to put it down');return}
+ if(carry>=0){if(Math.hypot(px-CRATE[0],pz-CRATE[1])<2.5){if(rk[carry].gem)Net.send({type:'rock_sell',n:carry,by:ME});else toast('Just a plain rock — not worth anything');return}
+  if(aim)Net.send({type:'rock_place',n:carry,x:aim.x,z:aim.z,by:ME});else toast('Aim at the ground to put it down');return}
  if(carryF>=0){const f=world.finds[carryF],db=Math.hypot(px-BIN[0],pz-BIN[1]),dc=Math.hypot(px-CRATE[0],pz-CRATE[1]);
   if(db<2.5||dc<2.5){const at=db<=dc?'bin':'crate';if(at===(f.type==='trash'?'bin':'crate'))Net.send({type:'find_deposit',n:carryF,by:ME});else toast(f.type==='trash'?'That belongs in the trashcan':'That belongs in the crate');return}
   if(aim)Net.send({type:'find_place',n:carryF,x:aim.x,z:aim.z,by:ME});else toast('Aim at the ground to put it down');return}
+ if(aim){let bi=-1,bd=1.6;GS.forEach((q,i)=>{if(!q||q.cut==null)return;const p=cutPos(i),d=Math.hypot(p[0]-aim.x,p[1]-aim.z);if(d<bd&&Math.hypot(p[0]-px,p[1]-pz)<3.5){bd=d;bi=i}});if(bi>=0){Net.send({type:'cable_fix',i:bi,by:ME});return}}
+ if(Math.hypot(px-SOCK[0],pz-SOCK[1])<2.6){if(!Prog.up.lamps)toast('No lights yet — buy some at the workbench');else Net.send({type:'lamp_power',on:glOn?0:1,by:ME});return}
+ if(Math.hypot(px-BENCH[0],pz-BENCH[1])<3.2){setShop(true);return}
  if(Math.hypot(px-mower.position.x,pz-mower.position.z)<2.2){if(mowerOwner)toast('Someone else is using the mower');else Net.send({type:'mower_grab',by:ME});return}
  const dir=new V3(0,0,-1).applyQuaternion(cam.quaternion);let best=-1,bd=2.4;
  for(let n=0;n<RN;n++){const q=rk[n];if(q.held)continue;const h=world.hAt(q.x,q.z);if(q.y+q.s*.4<h)continue;/* still buried */
@@ -422,25 +593,34 @@ function useE(){if(state!=='play'||paused)return;audio();
  for(let n=0;n<world.finds.length;n++){const f=world.finds[n];if(!findOut(f))continue;const d=Math.hypot(f.x-px,f.z-pz);if(d>3.5||d>=bd)continue;if(new V3(f.x-px,f.y-ey,f.z-pz).normalize().dot(dir)<.6)continue;best=n;bd=d}
  if(best>=0)Net.send({type:'find_pick',n:best,by:ME})}
 function dropCarry(reset){if(carry>=0){if(reset){rk[carry].held=0;setRock(carry);rocks.instanceMatrix.needsUpdate=true}carry=-1}clearCarryF()}
-function probe(){if(state!=='play'||paused||pc>0)return;pc=2.5;nz('lowpass',140,.5,1);sweep('bandpass',200,1400,.6,.35,.05);const gy=world.hAt(px,pz);let bs,bd=1e9;
+function probe(){if(state!=='play'||paused||pc>0)return;const pl=Prog.up.probe,nf=1-.3*pl;pcMax=pc=PCD[pl];pa=1;nz('lowpass',140,.5,1);sweep('bandpass',200,1400,.6,.35,.05);const gy=world.hAt(px,pz);let bs,bd=1e9;
  for(const s of world.sig){const d=Math.hypot(px-s.x,gy-s.y,pz-s.z);if(d<bd){bd=d;bs=s}}
- if(bd>13){$('pr').textContent='Probe: no signal in range';return}
- const dp=(gy-bs.y)*(1+(Math.random()-.5)*.1),dn=bd*(1+(Math.random()-.5)*.14)+(Math.random()-.5)*.3;
- $('pr').textContent=`Probe: object ~${dn.toFixed(1)} m away · ~${dp.toFixed(1)} m deep`;addRing(px,pz,Math.sqrt(Math.max(.04,dn*dn-dp*dp)))}
+ if(bd>PRNG[pl])return;/* no pipe in range: cooldown still runs, the ring only draws when something answers */
+ const dp=(gy-bs.y)*(1+(Math.random()-.5)*.1*nf),dn=bd*(1+(Math.random()-.5)*.14*nf)+(Math.random()-.5)*.3*nf;
+ addRing(px,pz,Math.sqrt(Math.max(.04,dn*dn-dp*dp)))}
 Net.on(a=>{
  if(a.type==='find_pick'){const f=world.finds[a.n];if(!f||f.done)return;f.held=a.by;f.m.visible=false;if(a.by===ME){holdFind(a.n);toast(`${FIND[f.kind][2]} — ${f.type==='trash'?'take it to the trashcan':'take it to the crate'}`)}return}
  if(a.type==='find_place'){const f=world.finds[a.n];f.held=0;f.out=1;f.x=a.x;f.z=a.z;f.y=world.hAt(a.x,a.z)+f.sz;syncFind(f);if(a.by===ME&&carryF===a.n)clearCarryF();return}
- if(a.type==='find_deposit'){const f=world.finds[a.n];if(!f||f.done)return;f.done=1;f.held=0;f.m.visible=false;world.score+=f.pts;$('sc').textContent=world.score;if(a.by===ME){if(carryF===a.n)clearCarryF();toast(`+${f.pts}`);f.type==='trash'?clank():ping()}return}
+ if(a.type==='find_deposit'){const f=world.finds[a.n];if(!f||f.done)return;f.done=1;f.held=0;f.m.visible=false;world.score+=f.pts;Prog.bank+=f.pts;hudPts();saveProg();if(a.by===ME){if(carryF===a.n)clearCarryF();toast(`+${f.pts}`);f.type==='trash'?clank():ping()}return}
  if(a.type==='rock_pick'){const q=rk[a.n];q.held=a.by;go.position.set(0,-50,0);go.scale.setScalar(0);go.updateMatrix();rocks.setMatrixAt(a.n,go.matrix);rocks.instanceMatrix.needsUpdate=true;
-  if(a.by===ME){carry=a.n;carryM.scale.set(q.s*q.w,q.s,q.s*q.w);carryM.material.color.fromArray(rocks.instanceColor.array,a.n*3)}}
+  if(a.by===ME){carry=a.n;carryM.scale.set(q.s*q.w,q.s,q.s*q.w);carryM.material.color.fromArray(rocks.instanceColor.array,a.n*3);if(q.gem)toast(`${GEM[q.gem][0]}! Take it to the crate`)}}
+ if(a.type==='rock_sell'){const q=rk[a.n];if(!q||!q.gem||q.held==='$')return;const pts=GEM[q.gem][1];q.held='$';go.position.set(0,-50,0);go.scale.setScalar(0);go.updateMatrix();rocks.setMatrixAt(a.n,go.matrix);rocks.instanceMatrix.needsUpdate=true;world.score+=pts;Prog.bank+=pts;hudPts();saveProg();if(a.by===ME){if(carry===a.n)carry=-1;toast(`${GEM[q.gem][0]} sold  +${pts}`);ping()}return}
  if(a.type==='rock_place'){const q=rk[a.n];q.held=0;q.x=a.x;q.z=a.z;q.y=world.hAt(a.x,a.z)+q.s*.3;setRock(a.n);rocks.instanceMatrix.needsUpdate=true;if(a.by===ME&&carry===a.n)carry=-1;return}
- if(a.type==='mower_grab'){mowerOwner=a.by;if(a.by===ME){mowerHeld=true;mowX=undefined}return}
+ if(a.type==='buy'){const u=UPG[a.id],c=upCost(a.id);Prog.bank-=c;Prog.up[a.id]++;hudPts();saveProg();
+  if(a.by===ME){ping();toast(`${u.n} upgraded to level ${Prog.up[a.id]}`)}else toast(`Team bought ${u.n} level ${Prog.up[a.id]}`);return}
+ if(a.type==='lamp_place'){glPlace(a.i,a.x,a.z);if(a.by===ME){clank();toast(GS.every((q,i)=>q||i>=Prog.up.lamps)?'Light placed — E at the wall socket switches it on':'Light placed')}return}
+ if(a.type==='lamp_pick'){glPick(a.i);if(a.by===ME)toast('Light picked up');return}
+ if(a.type==='cable_cut'){const q=GS[a.i];if(!q||q.cut!=null)return;q.cut=Math.max(0,Math.min(1,a.t));glCable(a.i);zap(a.i);toast(a.by===ME?'Zzzt! Cable cut — aim at the break and press E to splice it':'A garden light cable was cut!');return}
+ if(a.type==='cable_fix'){const q=GS[a.i];if(!q||q.cut==null)return;q.cut=null;glCable(a.i);if(a.by===ME)clank();toast(a.by===ME?'Cable spliced':'Cable repaired');return}
+ if(a.type==='bank_add'){Prog.bank+=a.n;hudPts();saveProg();if(a.by===ME){ping();toast(`DEV: +${a.n} points`)}return}
+ if(a.type==='lamp_power'){glOn=!!a.on;if(a.by===ME)ping();toast(glOn?'Garden lights on':'Garden lights off');return}
+ if(a.type==='mower_grab'){mowerOwner=a.by;if(a.by===ME){mowerHeld=true;mowX=undefined;mh=yaw}return}
  if(a.type==='mower_drop'){mowerOwner=null;mowerTarget=null;mower.position.set(a.x,world.hAt(a.x,a.z),a.z);mower.rotation.y=a.ry;mowerOn=!!a.on;if(a.by===ME)mowerHeld=false;return}
  if(a.type==='mow'){if(a.by!==ME){let ch=0;for(const ci of a.cells)if(ci>=0&&ci<MG*MG&&!mown[ci]){mown[ci]=1;cutCell(ci);ch=1}if(ch)grass.instanceMatrix.needsUpdate=true}return}
  if(a.type==='win'){win();return}
- if(a.type==='new_yard'){const was=state!=='play';newGame(a.seed);state='play';$('hud').style.display='block';sh.visible=true;
+ if(a.type==='new_yard'){const was=state!=='play';newGame(a.seed,a.size);state='play';$('hud').style.display='block';sh.visible=true;
   if(a.by!==ME&&was){if(fallback){paused=false;show(null)}else{paused=true;show('pause')}}return}
- if(a.type!=='dig')return;world.apply(a);sync();clearGrass(a.x,a.z);settleRocks(a.x,a.z);settleFinds(a.x,a.z);if(a.by!==ME)Net.swing(a.by);sync();clearGrass(a.x,a.z);settleRocks(a.x,a.z);settleFinds(a.x,a.z);$('dg').textContent=world.digs;const y=world.hAt(a.x,a.z);
+ if(a.type!=='dig')return;glDirty=true;world.apply(a);sync();clearGrass(a.x,a.z);settleRocks(a.x,a.z);settleFinds(a.x,a.z);if(a.by!==ME)Net.swing(a.by);sync();clearGrass(a.x,a.z);settleRocks(a.x,a.z);settleFinds(a.x,a.z);const y=world.hAt(a.x,a.z);
  for(let i=0;i<18;i++){const px2=a.x+(Math.random()-.5)*.6,pz2=a.z+(Math.random()-.5)*.6,q=digDepth(px2,pz2),dd=q.d-Math.random()*.2;
   spawn(new V3(px2,y+.1,pz2),new V3((Math.random()-.5)*3,2.5+Math.random()*3,(Math.random()-.5)*3),1.6,false,soilMat(dd<.05&&Math.random()<.4?-1:Math.max(0,dd),q.n))}
  if(a.by===ME)thud();if(state!=='play')return;
@@ -452,26 +632,42 @@ function win(){state='won';geyser=true;nz('bandpass',1800,2.5,.7);sweep('lowpass
  setTimeout(()=>{if(state==='won'){document.exitPointerLock?.();$('hud').style.display='none';show('win')}},2400)}
 
 /* ---------- input ---------- */
-addEventListener('keydown',e=>{keys[e.code]=true;if(state==='intro'){state='menu';audio();show(menuScr());return}if(e.code==='KeyF')probe();if(e.code==='KeyE'&&!e.repeat)useE()});
+function flashKey(){if(!Prog.up.lantern)toast('Buy a flashlight at the workbench');else{flashOn=!flashOn;toast(flashOn?'Flashlight on':'Flashlight off')}}
+/* left click: use whatever the hotbar has in hand */
+function useItem(){if(sel!==want)return;if(sel===0)tryDig();else if(sel===1)probe();else if(!handsBusy()){if(sel===2)flashKey();else if(sel===3)lampKey()}}
+addEventListener('wheel',e=>{if(state!=='play'||paused||shopOpen)return;const d=e.deltaY>0?1:-1;let i=want;for(let k=0;k<HB.length;k++){i=(i+d+HB.length)%HB.length;if(HB[i].ok())break}hbSelect(i)},{passive:true});
+addEventListener('keydown',e=>{keys[e.code]=true;if(state==='intro'){state='menu';audio();show(menuScr());return}if(e.code==='KeyF')probe();if(e.code==='KeyE'&&!e.repeat)useE();
+ if(state!=='play'||paused||e.repeat)return;
+ if(e.code==='KeyL')flashKey();
+ if(!shopOpen&&/^(Digit|Numpad)[1-4]$/.test(e.code))hbSelect(+e.code.slice(-1)-1);
+ if(e.code==='KeyG'&&state==='play'&&!paused)lampKey();
+ if(DEV&&e.code==='F9'&&state==='play'){e.preventDefault();Net.send({type:'bank_add',n:e.shiftKey?1000:100,by:ME})}
+ if(shopOpen&&/^(Digit|Numpad)[1-6]$/.test(e.code)){const id=UKEY[+e.code.slice(-1)-1],c=upCost(id);if(c===Infinity)toast(`${UPG[id].n} is maxed out`);else if(c>Prog.bank)toast(`Need ${c} points for ${UPG[id].n}`);else Net.send({type:'buy',id,by:ME})}});
 addEventListener('keyup',e=>keys[e.code]=false);addEventListener('contextmenu',e=>e.preventDefault());
 $('intro').addEventListener('click',()=>{if(state==='intro'){state='menu';audio();show(menuScr())}});
 addEventListener('mousemove',e=>{if(state==='intro'||paused)return;if(locked||(fallback&&dragging)){yaw-=e.movementX*.0022;pitch=Math.max(-1.45,Math.min(1.45,pitch-e.movementY*.0022));moved+=Math.abs(e.movementX)+Math.abs(e.movementY)}});
-addEventListener('mousedown',e=>{if(e.target.closest('button')||state!=='play'||paused)return;if(e.button===2){probe();return}if(e.button!==0)return;if(mowerHeld){mowerOn=!mowerOn;return}holding=true;heldT=0;autoDug=false;if(locked)tryDig();else if(fallback){dragging=true;moved=0}});
-addEventListener('mouseup',e=>{if(e.button!==0)return;if(dragging&&moved<6&&!autoDug)tryDig();dragging=false;holding=false});
+addEventListener('mousedown',e=>{if(e.target.closest('button')||state!=='play'||paused)return;if(e.button===2){probe();return}if(e.button!==0)return;if(mowerHeld){mowerOn=!mowerOn;return}holding=sel===0;heldT=0;autoDug=false;if(locked)useItem();else if(fallback){dragging=true;moved=0}});
+addEventListener('mouseup',e=>{if(e.button!==0)return;if(dragging&&moved<6&&!autoDug)useItem();dragging=false;holding=false});
 addEventListener('blur',()=>{holding=dragging=false});
-document.addEventListener('pointerlockchange',()=>{locked=document.pointerLockElement===cv;if(!locked&&state==='play'&&!fallback){holding=false;paused=true;show('pause')}});
+document.addEventListener('pointerlockchange',()=>{locked=document.pointerLockElement===cv;if(!locked&&state==='play'&&!fallback){holding=false;paused=true;setShop(false);show('pause')}});
+/* yard-size selector (menu, co-op lobby, pause, win): one shared choice, remembered */
+if(DEV)$('devHint').textContent=' · DEV: F9 = +100 points (Shift = +1000)';
+window.addPoints=n=>Net.send({type:'bank_add',n:n|0,by:ME});/* console helper, same rules as F9 */
+const szBtns=[...document.querySelectorAll('.szsel button')],szShow=()=>szBtns.forEach(b=>b.classList.toggle('on',+b.dataset.s===wantSize));
+szBtns.forEach(b=>b.onclick=()=>{wantSize=+b.dataset.s;try{localStorage.setItem('burstSize',wantSize)}catch(e){}szShow();
+ if((state==='menu'||state==='intro')&&Net.mode==='solo'&&wantSize!==S)newGame(undefined,wantSize)/* the yard behind the menu follows the choice */});szShow();
 $('bSolo').onclick=()=>startPlay();$('bHow').onclick=()=>{$('how').hidden=!$('how').hidden};
 $('bRes').onclick=()=>{paused=false;show(null);lock()};
 for(const id of['bNew2','bNew3'])$(id).onclick=()=>{if(Net.mode==='client')return;
- if(Net.mode==='host'){paused=false;show(null);Net.send({type:'new_yard',seed:rndSeed()});if(!fallback)lock();return}
- if(state==='play'){paused=false;show(null);newGame();if(!fallback)lock()}else startPlay()};
+ if(Net.mode==='host'){paused=false;show(null);Net.send({type:'new_yard',seed:rndSeed(),size:wantSize});if(!fallback)lock();return}
+ if(state==='play'){paused=false;show(null);newGame(undefined,wantSize);if(!fallback)lock()}else startPlay()};
 for(const id of['bMenu','bMenu2','bMenu3'])$(id).onclick=toMenu;
 
 /* ---------- loop ---------- */
 function play(dt){
  const K=keys,ox=px,oz=pz,f=(K.KeyW||K.ArrowUp?1:0)-(K.KeyS||K.ArrowDown?1:0),s=(K.KeyD?1:0)-(K.KeyA?1:0);
- if(!paused){if(f||s){const sp=(K.ShiftLeft?6.5:4)*dt,dx=-Math.sin(yaw)*f+Math.cos(yaw)*s,dz=-Math.cos(yaw)*f-Math.sin(yaw)*s,l=Math.hypot(dx,dz),nx=px+dx/l*sp,nz2=pz+dz/l*sp;
-   if(free(nx,pz)&&Math.abs(nx)<9.3)px=nx;if(free(px,nz2)&&nz2>-9.2&&nz2<9.3)pz=nz2}
+ if(!paused){if(f||s){const sp=(K.ShiftLeft?6.5:4)*dt*BSPD[Prog.up.boots],dx=-Math.sin(yaw)*f+Math.cos(yaw)*s,dz=-Math.cos(yaw)*f-Math.sin(yaw)*s,l=Math.hypot(dx,dz),nx=px+dx/l*sp,nz2=pz+dz/l*sp;
+   if(free(nx,pz)&&Math.abs(nx)<YH-.7)px=nx;if(free(px,nz2)&&nz2>-(YH-.8)&&nz2<YH-.7)pz=nz2}
   if(state==='play')elapsed+=dt;stepD+=Math.hypot(px-ox,pz-oz);if(stepD>(K.ShiftLeft?2:1.5)){stepD=0;stepSnd()}}
  ey+=(world.hAt(px,pz)+1.7-ey)*Math.min(1,dt*10);
  cam.position.set(px,ey,pz);cam.rotation.set(pitch,yaw,0);cam.updateMatrixWorld();
@@ -479,34 +675,46 @@ function play(dt){
  for(let t=.3;t<7;t+=.07){p.copy(cam.position).addScaledVector(dir,t);const g=world.hAt(p.x,p.z);if(p.y<g){aim=new V3(p.x,g,p.z);break}}
  cd-=dt;
  /* holding left mouse = keep digging at the tool's max rate (fallback drag mode: only while the cursor stays still) */
- if(holding&&state==='play'&&!paused){heldT+=dt;if(locked)tryDig();else if(dragging&&moved<6&&heldT>.3){const c0=cd;tryDig();if(cd>c0)autoDug=true}}
+ if(holding&&sel===0&&want===0&&state==='play'&&!paused){heldT+=dt;if(locked)tryDig();else if(dragging&&moved<6&&heldT>.3){const c0=cd;tryDig();if(cd>c0)autoDug=true}}
+ if(Net.mode!=='solo'||!paused)dayT=(dayT+dt/DAY_LEN)%1;/* co-op keeps running while one player is paused */
+ const fl=Prog.up.lantern;flash.intensity+=((flashOn&&fl?2.6+1.1*(fl-1):0)-flash.intensity)*Math.min(1,dt*12);flash.angle=fl>1?.6:.45;flash.distance=fl>1?22:16;
+ const nb=Math.hypot(px-BENCH[0],pz-BENCH[1]);if(shopOpen&&nb>3.8)setShop(false);
+ const ns=Math.hypot(px-SOCK[0],pz-SOCK[1]),hn=ns<2.6?`Press E — lights ${glOn?'off':'on'}`:'Press E — workbench';if($('hint').textContent!==hn)$('hint').textContent=hn;
+ $('hint').style.display=!shopOpen&&(nb<3.2||ns<2.6)&&!handsBusy()&&state==='play'&&!paused?'block':'none';lampTick(dt);
  pc=Math.max(0,pc-dt);swing=Math.max(0,swing-dt*1.5);const sw=Math.sin((1-swing)*Math.PI)*(swing>0?1:0);
- sh.visible=!handsBusy();sh.position.set(.45,-.62-sw*.08+Math.sin(T*1.7)*.004,-.3-sw*.12);sh.rotation.set(-sw*.7,sw*.1,sw*.05);
+ if(sel!==want){swapK=Math.min(1,swapK+dt*7);if(swapK>=1)sel=want}else swapK=Math.max(0,swapK-dt*7);
+ const empty=!handsBusy(),swo=swapK*.6,bob=Math.sin(T*1.7)*.004;pa=Math.max(0,pa-dt*1.5);
+ sh.visible=empty&&sel===0;sh.position.set(.45,-.62-sw*.08+bob-swo,-.3-sw*.12);sh.rotation.set(-sw*.7,sw*.1,sw*.05);
+ hp.visible=empty&&sel===1;if(hp.visible){const d=Math.sin(pa*Math.PI);hp.position.set(.3,-.18+bob-d*.28-swo,-.55-d*.1);hp.rotation.set(.3,-.12,.1)}
+ hf.visible=empty&&sel===2;if(hf.visible){hfLens.color.setRGB(...(flashOn&&Prog.up.lantern?[4,3.6,2.8]:[.25,.25,.25]));hf.position.set(.3,-.3+bob-swo,-.42);hf.rotation.set(.04,-.12,0)}
+ hl.visible=empty&&sel===3;if(hl.visible){hl.position.set(.28,-.33+bob-swo,-.5);hl.rotation.set(.12,-.2,.04)}
  /* mower: pushed 1.2 m ahead while held, otherwise it rests on the ground; the engine cuts grass and throws clippings */
- if(mowerHeld){const fx=-Math.sin(yaw),fz=-Math.cos(yaw),mx=px+fx*2.1,mz=pz+fz*2.1;mower.position.set(mx,world.hAt(mx,mz),mz);mower.rotation.y=yaw+Math.PI}
+ if(mowerHeld){/* the deck is heavy: it follows your view at a limited turn rate, so whipping the mouse around doesn't sweep it across the lawn */
+  let d=yaw-mh;d-=Math.round(d/6.2832)*6.2832;mh+=Math.max(-MTURN*dt,Math.min(MTURN*dt,d));
+  const fx=-Math.sin(mh),fz=-Math.cos(mh),mx=px+fx*1.6,mz=pz+fz*1.6;mower.position.set(mx,world.hAt(mx,mz),mz);mower.rotation.y=mh+Math.PI}
  else{if(mowerOwner&&mowerTarget){/* someone else is pushing it: glide to their last reported spot */
    const k=Math.min(1,dt*12),m=mower.position;m.x+=(mowerTarget.x-m.x)*k;m.z+=(mowerTarget.z-m.z)*k;let d=mowerTarget.ry-mower.rotation.y;d-=Math.round(d/6.2832)*6.2832;mower.rotation.y+=d*k}
   mower.position.y+=(world.hAt(mower.position.x,mower.position.z)-mower.position.y)*Math.min(1,dt*10)}
  if(mowerOn){const mx=mower.position.x,mz=mower.position.z;
  if(mowerHeld){/* only the owner cuts; everyone else gets the cut cells from the host */
   if(mowX===undefined){mowX=mx;mowZ=mz}const steps=Math.max(1,Math.ceil(Math.hypot(mx-mowX,mz-mowZ)/.25));
-  for(let s=1;s<=steps;s++)mowAt(mowX+(mx-mowX)*s/steps,mowZ+(mz-mowZ)*s/steps,.7);mowX=mx;mowZ=mz}
+  for(let s=1;s<=steps;s++)mowAt(mowX+(mx-mowX)*s/steps,mowZ+(mz-mowZ)*s/steps,MRAD[Prog.up.mower]);mowX=mx;mowZ=mz}
  mower.wheels.forEach(w=>w.rotation.x+=dt*18);
   if(Math.random()<.6)spawn(mower.position.clone().add(new V3((Math.random()-.5)*.6,.3,(Math.random()-.5)*.6)),new V3((Math.random()-.5)*1.2,1+Math.random(),(Math.random()-.5)*1.2),.6,false,soilMat(-1,0))}
  if(AC&&clipM){const on=mowerOn&&state==='play'&&!paused,att=mowerHeld?1:Math.max(.12,1-Math.hypot(px-mower.position.x,pz-mower.position.z)/18);clipM.gain.gain.setTargetAtTime(on?.05*att:0,AC.currentTime,.15);clipM.blade.gain.setTargetAtTime(on?.012*att:0,AC.currentTime,.15)}
  /* carried rock sits in the hands */
  if(carry>=0){carryM.visible=true;carryM.position.set(.35,-.35,-.7);carryM.rotation.set(rk[carry].a,rk[carry].b+T*.4,rk[carry].c)}else carryM.visible=false;
  if(carryFM){carryFM.position.set(.32,-.36,-.78);carryFM.rotation.set(.45,T*.6,.2)}
- $('sf').style.width=((1-pc/2.5)*100)+'%';
+ $('cdf').style.height=(pc>0?pc/pcMax*100:0)+'%';
  const hd=Math.hypot(px-world.burst.x,world.hAt(px,pz)-world.burst.y,pz-world.burst.z);
  if(AC&&hissG)hissG.gain.setTargetAtTime(state==='play'&&!paused&&hd<3?Math.pow(1-hd/3,2)*.16:0,AC.currentTime,.15);
- hudT-=dt;if(hudT<=0){hudT=.25;$('tm').textContent=Math.floor(elapsed/60)+':'+String(Math.floor(elapsed%60)).padStart(2,'0')}
+ hudT-=dt;if(hudT<=0){hudT=.25;$('tm').textContent=Math.floor(elapsed/60)+':'+String(Math.floor(elapsed%60)).padStart(2,'0');const hh=dayT*24;$('cl').textContent=String(Math.floor(hh)).padStart(2,'0')+':'+String(Math.floor(hh%1*60)).padStart(2,'0')+(dayF<.45?' ☾':' ☀')}
  if(toastT>0&&(toastT-=dt)<=0)$('toast').style.opacity=0;
 }
 function loop(now){requestAnimationFrame(loop);const dt=Math.min(.05,(now-last)/1000);last=now;T+=dt;
  if(state==='play'||state==='won'){play(dt);Net.tick(dt)}
- else{const a=Math.sin(T*.12)*.9;cam.position.set(Math.sin(a)*17,6.5,Math.cos(a)*17);cam.lookAt(0,0,0)}
+ else{const a=Math.sin(T*.12)*.9;cam.position.set(Math.sin(a)*(YH+7),6.5+DEL*.5,Math.cos(a)*(YH+7));cam.lookAt(0,0,0)}
  for(let i=rings.length-1;i>=0;i--){const q=rings[i];q.t=Math.min(1,q.t+dt/.9);q.age=(q.age||0)+dt;q.m.scale.setScalar(Math.max(.01,q.r*(1-Math.pow(1-q.t,3))));q.m.material.opacity=Math.max(0,Math.min(1,(12-q.age)/4))*.6;if(q.age>12){scene.remove(q.m);rings.splice(i,1)}}
  if(geyser)for(let k=0;k<4;k++)spawn(new V3(world.burst.x,world.burst.y+.15,world.burst.z),new V3((Math.random()-.5)*1.4,5+Math.random()*3,(Math.random()-.5)*1.4),1.5,true);
- if(world)stepParts(dt);GU.uT.value=T;fxRender()}
+ if(world)stepParts(dt);GU.uT.value=T;applyDay();fxRender()}
 newGame();requestAnimationFrame(loop);
