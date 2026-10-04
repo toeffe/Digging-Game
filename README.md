@@ -24,7 +24,7 @@ A first-person digging game in the browser (three.js r128, no build step). Somet
 
 ## Day, night and upgrades
 
-A full day lasts 10 minutes and about 3.5 of them are night. It is too dark to dig at night unless your flashlight is on. Points from finds go into a bank that you spend at the workbench by the house on six upgrades: Shovel, Probe, Flashlight, Mower, Boots and Garden lights (up to 4 lamps on a cable from the socket on the house, the cable reaches the whole yard; you can dig near a lit lamp at night). Starting a new yard resets everything (points and upgrades). In co-op the bank and upgrades are shared by the whole team.
+A full day lasts 10 minutes and about 3.5 of them are night. It is too dark to dig at night unless your flashlight is on. Points from finds go into a bank that you spend at the workbench by the house on six upgrades: Shovel, Probe, Flashlight, Mower, Boots and Garden lights (up to 4 lamps on a cable from the socket on the house, the cable reaches the whole yard; you can dig near a lit lamp at night). Each yard starts with 80 points and no upgrades. A new yard resets you to that. In co-op the bank and upgrades are shared by the whole team.
 
 ## Yard size, loot and gems
 
