@@ -49,13 +49,13 @@ class World{
  hAt(x,z){const u=(x+S/2)/C,v=(z+S/2)/C;let i=Math.max(0,Math.min(N-1,Math.floor(u))),j=Math.max(0,Math.min(N-1,Math.floor(v)));
   const fu=Math.min(1,Math.max(0,u-i)),fv=Math.min(1,Math.max(0,v-j)),H=this.H,k=j*(N+1)+i;
   return(H[k]*(1-fu)+H[k+1]*fu)*(1-fv)+(H[k+N+1]*(1-fu)+H[k+N+2]*fu)*fv}
- apply(a){if(a.type!=='dig')return;const{x,z}=a,lv=Prog.up.shovel,R=1+.1*lv,M=R+.6,P=7,W=this,L=C*1.1;
+ apply(a){if(a.type!=='dig')return;const{x,z}=a,lv=Prog.up.shovel,R=1+.1*lv,M=R+.6,P=7,W=this,L=C*1.75;
   const ix=v=>Math.floor((v+S/2)/C);
   for(let j=Math.max(0,ix(z-M));j<=Math.min(N,ix(z+M)+1);j++)for(let i=Math.max(0,ix(x-M));i<=Math.min(N,ix(x+M)+1);i++){const d=Math.hypot(i*C-S/2-x,j*C-S/2-z),k=j*(N+1)+i;
-   if(d<R){const t=1-d/R;W.H[k]=Math.max(FLOOR,W.H[k]-.18*(1+.33*lv)*t*t*(3-2*t)*W.PW[k]);W.D[k]=1}else if(d<M){W.H[k]+=.03*Math.sin(Math.PI*(d-R)/(M-R));W.D[k]=1}}
-  /* angle of repose: steep soil slumps downhill, so deep holes must be wide */
+   if(d<R){const t=1-d/R;W.H[k]=Math.max(FLOOR,W.H[k]-.24*(1+.33*lv)*t*t*(3-2*t)*W.PW[k]);W.D[k]=1}else if(d<M){W.H[k]+=.03*Math.sin(Math.PI*(d-R)/(M-R));W.D[k]=1}}
+  /* angle of repose: walls cave in, but a hole can stay steep enough to reach the pipe and the deep finds */
   const i0=Math.max(1,ix(x-P)),i1=Math.min(N-1,ix(x+P)+1),j0=Math.max(1,ix(z-P)),j1=Math.min(N-1,ix(z+P)+1);
-  for(let it=0;it<10;it++)for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++){const k=j*(N+1)+i;for(const q of[k+1,k-1,k+N+1,k-N-1]){const d=W.H[k]-W.H[q];if(d>L){const m=(d-L)*.3*W.PW[k];if(m>0){W.H[k]-=m;W.H[q]+=m;W.D[k]=W.D[q]=1}}}}
+  for(let it=0;it<6;it++)for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++){const k=j*(N+1)+i;for(const q of[k+1,k-1,k+N+1,k-N-1]){const d=W.H[k]-W.H[q];if(d>L){const m=(d-L)*.22*W.PW[k];if(m>0){W.H[k]-=m;W.H[q]+=m;W.D[k]=W.D[q]=1}}}}
   for(let t=0;t<=N;t++)for(const e of[t,N*(N+1)+t,t*(N+1),t*(N+1)+N]){W.H[e]=W.B[e];W.D[e]=0}/* border stays flush with the outer ground */
   W.digs++;W.log.push(x,z)}
  exposed(){let c=0;for(let t=-.02;t<=.021;t+=.02){const p=this.curve.getPoint(this.bt+t);if(this.hAt(p.x,p.z)<p.y+.1)c++}return c>=2}
@@ -341,7 +341,7 @@ const RNMAX=Math.round(700*36*36/400);let RN=700;/* buried rocks: 1.75 per m2 */
 const rocks=new THREE.InstancedMesh(rockG,mat(0xffffff,{roughness:.95}),RNMAX);rocks.castShadow=rocks.receiveShadow=true;scene.add(rocks);rocks.setColorAt(0,new THREE.Color());
 const rk=[];
 function setRock(n){const q=rk[n];go.position.set(q.x,q.y,q.z);go.rotation.set(q.a,q.b,q.c);go.scale.set(q.s*q.w,q.s,q.s*q.w);go.updateMatrix();rocks.setMatrixAt(n,go.matrix)}
-function buildRocks(){const r=rng(world.seed+2);rk.length=0;for(let n=0;n<RN;n++){const s=.07+Math.pow(r(),3)*.5;rk.push({x:(r()-.5)*(S-1),y:-.15-Math.pow(r(),1.3)*5,z:(r()-.5)*(S-1),a:r()*6,b:r()*6,c:r()*6,s,w:1+r()*.6});setRock(n);rocks.setColorAt(n,gc.setHSL(.08+r()*.05,.12+r()*.1,.25+r()*.3).convertSRGBToLinear())}
+function buildRocks(){const r=rng(world.seed+2);rk.length=0;for(let n=0;n<RN;n++){const s=.07+Math.pow(r(),3)*.5;rk.push({x:(r()-.5)*(S-1),y:-.15-Math.pow(r(),1.3)*3.4,z:(r()-.5)*(S-1),a:r()*6,b:r()*6,c:r()*6,s,w:1+r()*.6});setRock(n);rocks.setColorAt(n,gc.setHSL(.08+r()*.05,.12+r()*.1,.25+r()*.3).convertSRGBToLinear())}
  /* a few small rocks are gems (own RNG stream so the rock layout is unchanged): over-bright colour, so they glow through the bloom */
  const g=rng(world.seed+3);for(let n=0;n<RN;n++){const q=rk[n],a=g(),b=g();q.gem=0;if(a<GEM_RATE&&q.s<=.3){q.s=Math.max(q.s,.1);q.gem=b<.6?1:b<.9?2:3;setRock(n);rocks.setColorAt(n,gc.setRGB(...GEM[q.gem][2]))}}
  rocks.instanceMatrix.needsUpdate=rocks.instanceColor.needsUpdate=true}

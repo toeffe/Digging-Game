@@ -106,17 +106,18 @@ const Net=(()=>{
 
  /* ---- late join: full state snapshot so joiners don't depend on replaying every action ---- */
  function snap(){const w=world;return{day:dayT,prog:Prog,seed:w.seed,size:S,H:b64(new Uint8Array(w.H.buffer)),D:b64(w.D),digs:w.digs,score:w.score,log:w.log,
-  f:w.finds.map(f=>[f.x,f.y,f.z,f.held||0,f.done?1:0,f.out?1:0]),r:rk.map(q=>[q.x,q.y,q.z,q.held||0]),m:b64(mown),sf:w.sig.map(s=>s.f?1:0),
+  f:w.finds.map(f=>[f.x,f.y,f.z,f.held||0,f.done?1:0,f.out?1:0]),r:rk.map(q=>[q.x,q.y,q.z,q.held||0,q.gem||0]),m:b64(mown),sf:w.sig.map(s=>s.f?1:0),
   gl:GS.map(q=>q?[q.x,q.z,q.cut==null?-1:q.cut]:0),glon:glOn?1:0,
   mo:{o:mowerOwner||null,x:mower.position.x,z:mower.position.z,ry:mower.rotation.y,on:mowerOn?1:0}}}
  function applySnap(s){const w=world;
   w.H.set(new Float32Array(unb(s.H).buffer));w.D.set(unb(s.D));w.digs=s.digs;w.score=s.score;w.log=s.log;
-  s.f.forEach((a,i)=>{const f=w.finds[i];f.x=a[0];f.y=a[1];f.z=a[2];f.held=a[3];f.done=a[4];f.out=a[5]});
-  s.r.forEach((a,i)=>{const q=rk[i];q.x=a[0];q.y=a[1];q.z=a[2];q.held=a[3]});
+  s.f.forEach((a,i)=>{const f=w.finds[i];if(!f)return;f.x=a[0];f.y=a[1];f.z=a[2];f.held=a[3];f.done=a[4];f.out=a[5]});
+  s.r.forEach((a,i)=>{const q=rk[i];if(!q)return;q.x=a[0];q.y=a[1];q.z=a[2];q.held=a[3];
+   if(a.length>4&&(a[4]|0)!==q.gem){q.gem=a[4]|0;if(q.gem){q.s=Math.max(q.s,.1);rocks.setColorAt(i,gc.setRGB(...GEM[q.gem][2]))}else rocks.setColorAt(i,gc.setHSL(.1,.15,.4).convertSRGBToLinear())}});
   w.sig.forEach((x,i)=>x.f=s.sf[i]);mown.set(unb(s.m));
   sync();for(let i=0;i<w.log.length;i+=2)clearGrass(w.log[i],w.log[i+1]);
   for(let ci=0;ci<MG*MG;ci++)if(mown[ci])cutCell(ci);grass.instanceMatrix.needsUpdate=true;
-  rk.forEach((q,i)=>{if(q.held){go.position.set(0,-50,0);go.scale.setScalar(0);go.updateMatrix();rocks.setMatrixAt(i,go.matrix)}else setRock(i)});rocks.instanceMatrix.needsUpdate=true;
+  rk.forEach((q,i)=>{if(q.held){go.position.set(0,-50,0);go.scale.setScalar(0);go.updateMatrix();rocks.setMatrixAt(i,go.matrix)}else setRock(i)});rocks.instanceMatrix.needsUpdate=rocks.instanceColor.needsUpdate=true;
   w.finds.forEach(syncFind);
   const o=s.mo;mowerOwner=o.o;mowerOn=!!o.on;mower.position.set(o.x,w.hAt(o.x,o.z),o.z);mower.rotation.y=o.ry;mowerTarget={x:o.x,z:o.z,ry:o.ry};
   dayT=s.day;Prog={bank:s.prog.bank,up:Object.assign({},s.prog.up)};hudPts();
