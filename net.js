@@ -84,8 +84,8 @@ const Net=(()=>{
    case'a':N.seq=m.a.seq;N.emit(m.a);break;
    case'p':onPose(m.id,m.s);break;
    case'roster':{const old=N.roster;N.roster=m.r;
-    for(const id in m.r)if(!old[id]&&id!==ME){addRemote(id);toast(nm(m.r[id])+' joined')}
-    for(const id in old)if(!m.r[id]){removeRemote(id);toast(nm(old[id])+' left')}
+    for(const id in m.r)if(!(id in old)&&id!==ME){addRemote(id);toast(nm(m.r[id])+' joined')}
+    for(const id in old)if(!(id in m.r)){removeRemote(id);toast(nm(old[id])+' left')}
     N.ui();break}
    case'full':fail('That room is full.')}}
 
@@ -108,7 +108,7 @@ const Net=(()=>{
  /* ---- remote players: simple avatar (body, head, the real shovel) with an interpolated pose ---- */
  function tagTex(t,c){const cv=document.createElement('canvas');cv.width=256;cv.height=64;const x=cv.getContext('2d');x.font='bold 34px Georgia,serif';x.textAlign='center';x.textBaseline='middle';
   x.lineWidth=6;x.strokeStyle='rgba(0,0,0,.7)';x.strokeText(t,128,32);x.fillStyle='#'+c.toString(16).padStart(6,'0');x.fillText(t,128,32);return new THREE.CanvasTexture(cv)}
- function addRemote(id){if(id===ME||rem[id])return rem[id];const slot=N.roster[id]||1,col=COL[slot%4],g=new THREE.Group(),neck=new THREE.Group(),pivot=new THREE.Group(),skin=0xd9a77c;
+ function addRemote(id){if(id===ME||rem[id])return rem[id];const slot=N.roster[id]??1,col=COL[slot%4],g=new THREE.Group(),neck=new THREE.Group(),pivot=new THREE.Group(),skin=0xd9a77c;
   const part=(geo,c,x,y,z,o)=>{const m=new THREE.Mesh(geo,mat(c,o));m.position.set(x,y,z);m.castShadow=m.receiveShadow=true;return m};
   g.add(part(new THREE.CylinderGeometry(.2,.25,.8,10),col,0,1.1,0,{roughness:.8}),part(new THREE.CylinderGeometry(.09,.09,.72,8),0x2a2f3a,-.11,.36,0),part(new THREE.CylinderGeometry(.09,.09,.72,8),0x2a2f3a,.11,.36,0));
   neck.position.y=1.7;neck.add(part(new THREE.SphereGeometry(.16,14,10),skin,0,0,0),part(new THREE.BoxGeometry(.06,.06,.08),skin,0,-.02,-.17));
@@ -122,7 +122,7 @@ const Net=(()=>{
   r.shovel.visible=!(mw||cr>=0||cf>=0);
   if(cr>=0&&rk[cr]){const q=rk[cr],m=new THREE.Mesh(rockG,new THREE.MeshStandardMaterial({roughness:.95}));m.material.color.fromArray(rocks.instanceColor.array,cr*3);m.scale.set(q.s*q.w,q.s,q.s*q.w);m.position.set(.35,-.35,-.7);m.userData.own=1;m.castShadow=true;r.neck.add(m);r.hm=m}
   else if(cf>=0&&world.finds[cf]){const f=world.finds[cf],m=f.m.clone(true);m.visible=true;m.scale.setScalar(Math.min(2.4,.1/Math.max(.03,f.sz)));m.position.set(.32,-.36,-.78);r.neck.add(m);r.hm=m}}
- function onPose(id,s){if(id===ME||!s)return;let r=rem[id];if(!r){if(!N.roster[id])return;r=addRemote(id)}
+ function onPose(id,s){if(id===ME||!s)return;let r=rem[id];if(!r){if(!(id in N.roster))return;r=addRemote(id)}
   r.tx=s.x;r.tz=s.z;r.tyaw=s.yaw;r.tpitch=s.pitch;if(r.first){r.first=0;r.x=s.x;r.z=s.z;r.yaw=s.yaw;r.pitch=s.pitch}
   if(world)hold(r,s.cr,s.cf,!!s.m);
   if(s.m&&mowerOwner===id){mowerTarget={x:s.m[0],z:s.m[1],ry:s.m[2]};mowerOn=!!s.m[3]}}
