@@ -229,14 +229,18 @@ function buildYard(){clearGroup(yardG);PARENT=yardG;obst.length=0;obst.push({x:B
  /* trees + bin: soil around them is held by roots (see PROT in World), so they never float or sink */
  TREES.forEach(([x,z,s])=>{foliageTree(x,z,s);obst.push({x,z,r:.5*s})});
  const rb=rng(7),nb=Math.round(14*YH/10),st=2*(YH-1)/(nb-1),bx=YH-.7;for(let k=0;k<nb;k++){const t=-(YH-1)+k*st;[[bx,t],[-bx,t],[t,bx]].forEach(([x,z])=>{if(rb()<.5){const s=.5+rb()*.5,c=rb()<.5;if(Math.hypot(x-CRATE[0],z-CRATE[1])>1.35)blob(s,c?0x2d6a2b:0x3d8036,x,s*.7,z,1.2,.85,1.2)}})}
- cyl(.35,.3,.9,0x6b7378,BIN[0],.45,BIN[1],{roughness:.5,metalness:.3});cyl(.38,.38,.08,0x4c5358,BIN[0],.92,BIN[1]);
- /* open crate for artifacts, facing the yard */
- const[cx,cz]=CRATE;
- box(1.02,.08,.78,0xffffff,cx,.08,cz,{map:wood,roughness:.85});
- box(.07,.5,.78,0xffffff,cx-.47,.36,cz,{map:wood,roughness:.85});box(.07,.5,.78,0xffffff,cx+.47,.36,cz,{map:wood,roughness:.85});
- box(1.02,.5,.07,0xffffff,cx,.36,cz-.35,{map:wood,roughness:.85});box(1.02,.5,.07,0xffffff,cx,.36,cz+.35,{map:wood,roughness:.85});
- box(.84,.18,.6,0x241c16,cx,.24,cz,{roughness:1});
- for(const yy of[.24,.46])box(.02,.04,.66,0x6b5340,cx-.52,yy,cz,{roughness:.9});
+ cyl(.32,.38,.82,0xb7c0c6,BIN[0],.46,BIN[1],{roughness:.32,metalness:.62});
+ for(const y of[.25,.46,.67])cyl(.385,.385,.028,0x8d979e,BIN[0],y,BIN[1],{roughness:.28,metalness:.7});
+ cyl(.3,.34,.05,0x6e777c,BIN[0],.9,BIN[1],{roughness:.35,metalness:.55});cyl(.22,.22,.025,0xaeb6bb,BIN[0],.94,BIN[1],{roughness:.3,metalness:.6});
+ cyl(.025,.025,.07,0x3e454a,BIN[0],.99,BIN[1],{roughness:.4,metalness:.5});
+ box(.04,.1,.14,0x5c656b,BIN[0]-.37,.55,BIN[1],{roughness:.4,metalness:.5});box(.04,.1,.14,0x5c656b,BIN[0]+.37,.55,BIN[1],{roughness:.4,metalness:.5});
+ /* open slatted crate for artifacts, facing the yard */
+ const[cx,cz]=CRATE,woodO={map:wood,roughness:.85};
+ for(const sx of[-1,1])for(const sz of[-1,1])box(.07,.52,.07,0xffffff,cx+sx*.44,.3,cz+sz*.3,woodO);
+ box(.84,.05,.56,0xffffff,cx,.08,cz,woodO);box(.74,.04,.46,0x241c16,cx,.12,cz,{roughness:1});
+ for(const yy of[.22,.36,.5]){box(.86,.07,.045,0xffffff,cx,yy,cz-.33,woodO);box(.86,.07,.045,0xffffff,cx,yy,cz+.33,woodO)}
+ for(const yy of[.22,.36,.5]){box(.045,.07,.58,0xffffff,cx-.46,yy,cz,woodO);box(.045,.07,.58,0xffffff,cx+.46,yy,cz,woodO)}
+ box(.9,.04,.06,0xffffff,cx,.58,cz-.3,woodO);box(.9,.04,.06,0xffffff,cx,.58,cz+.3,woodO);
  obst.push({x:cx,z:cz,r:.7});PARENT=scene}
 
 /* ---------- surrounding world: hills, street, neighbours, forest ---------- */
@@ -422,53 +426,78 @@ function buildFinds(){if(findG){findG.traverse(o=>{if(o.isMesh){o.geometry.dispo
   f.m=g;g.visible=false;findG.add(g);syncFind(f)}}
 
 /* ---------- shovel, markers, particles ---------- */
-/* first-person shovel. Built along +Y (tip at y=0, D-grip at y=1.2), then tilted so the blade points forward-down-centre
-   and the handle runs back to the lower-right. `sh` (origin = grip) is what the dig animation pivots. */
+/* first-person shovel. Built along +Y (tip at y=0, D-grip at y=1.2), then tilted so the blade points forward-down.
+   The two gloves stay the last children: co-op hands grab those. `sh` (origin = grip) is what the dig animation pivots. */
 const sh=new THREE.Group();{
- const steel=new THREE.MeshStandardMaterial({color:lin(0xaab4bc),roughness:.4,metalness:.5,emissive:lin(0x14171a),side:THREE.DoubleSide}),
-  dark=new THREE.MeshStandardMaterial({color:lin(0x6e777e),roughness:.55,metalness:.5,emissive:lin(0x0c0e10),side:THREE.DoubleSide}),
+ const steel=new THREE.MeshStandardMaterial({color:lin(0xc5ced4),roughness:.35,metalness:.55,emissive:lin(0x14171a),side:THREE.DoubleSide}),
+  dark=new THREE.MeshStandardMaterial({color:lin(0x5c656c),roughness:.5,metalness:.5,emissive:lin(0x0c0e10),side:THREE.DoubleSide}),
   wd=mat(0xffffff,{map:wood,roughness:.7}),glove=mat(0x7a5530,{roughness:.9}),shov=new THREE.Group();
- const bg=new THREE.PlaneGeometry(1,1,12,14),bp=bg.attributes.position;
- for(let i=0;i<bp.count;i++){const t=bp.getY(i)+.5,u=bp.getX(i)*2,hw=t<.55?.1*Math.sqrt(Math.max(0,1-Math.pow((.55-t)/.55,1.7))):.1-.014*(t-.55)/.45,x=u*hw;bp.setXYZ(i,x,t*.32-.32,1.9*x*x+.01*(1-u*u)*t)}
+ const bg=new THREE.PlaneGeometry(1,1,16,18),bp=bg.attributes.position;
+ for(let i=0;i<bp.count;i++){const t=bp.getY(i)+.5,u=bp.getX(i)*2,half=t<.18?.015+t*.55:t<.72?.115:.115-(t-.72)*.08,x=u*half;bp.setXYZ(i,x,t*.34-.34,2.4*x*x+.012*(1-u*u)*Math.sin(t*Math.PI))}
  bg.computeVertexNormals();
- const blade=new THREE.Group(),b1=new THREE.Mesh(bg,steel),b2=new THREE.Mesh(bg,dark);b2.position.z=-.007;blade.add(b1,b2);blade.position.y=.32;blade.rotation.x=.32;
- const rim=new THREE.Mesh(new THREE.BoxGeometry(.2,.018,.05),steel);rim.position.set(0,.325,.012);
- const sock=new THREE.Mesh(new THREE.CylinderGeometry(.027,.042,.14,12),dark);sock.position.y=.38;
- const shaft=new THREE.Mesh(new THREE.CylinderGeometry(.022,.024,.86,12),wd);shaft.position.y=.78;
- const bar=new THREE.Mesh(new THREE.CylinderGeometry(.02,.02,.2,10),wd);bar.rotation.z=Math.PI/2;bar.position.y=1.2;
- const post=new THREE.Mesh(new THREE.CylinderGeometry(.02,.02,.09,10),wd);post.position.y=1.16;
+ const blade=new THREE.Group(),b1=new THREE.Mesh(bg,steel),b2=new THREE.Mesh(bg,dark);b2.position.z=-.008;blade.add(b1,b2);blade.position.y=.34;blade.rotation.x=.32;
+ const step=new THREE.Mesh(new THREE.BoxGeometry(.2,.016,.04),steel);step.position.set(0,.34,.02);step.rotation.x=.32;
+ const sock=new THREE.Mesh(new THREE.CylinderGeometry(.026,.04,.14,12),dark);sock.position.y=.38;
+ const shaft=new THREE.Mesh(new THREE.CylinderGeometry(.02,.024,.82,12),wd);shaft.position.y=.78;
+ const bar=new THREE.Mesh(new THREE.CylinderGeometry(.016,.016,.16,10),wd);bar.rotation.z=Math.PI/2;bar.position.y=1.2;
+ const loop=new THREE.Mesh(new THREE.TorusGeometry(.062,.015,6,12,Math.PI),wd);loop.position.y=1.2;
  const gl=[.98,.66].map(y=>{const g=new THREE.Mesh(new THREE.SphereGeometry(.058,14,10),glove);g.scale.set(1.05,1.5,1.05);g.position.y=y;return g});
- shov.add(blade,rim,sock,shaft,bar,post,...gl);
+ shov.add(blade,step,sock,shaft,bar,loop,...gl);
  const dh=new V3(.45,-.25,.86).normalize(),nn=new V3(-.25,1,.2);nn.addScaledVector(dh,-nn.dot(dh)).normalize();
  shov.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new V3().crossVectors(dh,nn).normalize(),dh,nn));
  shov.position.copy(dh).multiplyScalar(-1.2);
  sh.add(shov);cam.add(sh);sh.visible=false}
 /* ---------- hotbar: 1 shovel, 2 ground probe, 3 flashlight, 4 garden light (3 and 4 unlock at the workbench). Left click uses the selected item. ---------- */
 const hp=new THREE.Group(),hf=new THREE.Group(),hl=new THREE.Group(),hfLens=new THREE.MeshBasicMaterial({color:0x555555}),hlLens=new THREE.MeshBasicMaterial({color:new THREE.Color(1.3,1.05,.55)});
-{const st=mat(0xaab4bc,{roughness:.4,metalness:.5}),blk=mat(0x2a2d31,{roughness:.5,metalness:.6}),glv=mat(0x7a5530,{roughness:.9}),yel=mat(0xf0b400,{roughness:.45,metalness:.3}),M=(g,m,x=0,y=0,z=0)=>{const o=new THREE.Mesh(g,m);o.position.set(x,y,z);return o},fist=()=>{const f=M(new THREE.SphereGeometry(.058,12,9),glv);f.scale.set(1.25,1,1.1);return f};
- /* probe: a long steel rod with a T-handle, tip pointing down */
- hp.add(M(new THREE.CylinderGeometry(.011,.011,1.05,8),st,0,-.56),M(new THREE.ConeGeometry(.022,.12,8).rotateX(Math.PI),st,0,-1.15),M(new THREE.CylinderGeometry(.018,.018,.26,10).rotateZ(Math.PI/2),blk),fist());
- /* flashlight: held pointing forward */
- hf.add(M(new THREE.CylinderGeometry(.034,.034,.2,12).rotateX(Math.PI/2),blk,0,0,-.1),M(new THREE.CylinderGeometry(.05,.037,.07,12).rotateX(Math.PI/2),yel,0,0,-.235),M(new THREE.CylinderGeometry(.024,.024,.03,10).rotateX(Math.PI/2),yel,0,.04,-.08),
-  M(new THREE.CircleGeometry(.043,14).rotateY(Math.PI),hfLens,0,0,-.272),fist());
- /* garden light: the yellow work-light head, carried by its handle */
- hl.add(M(new THREE.BoxGeometry(.26,.17,.08),yel,0,.1,-.1),M(new THREE.BoxGeometry(.29,.2,.025),blk,0,.1,-.045),M(new THREE.PlaneGeometry(.22,.13).rotateY(Math.PI),hlLens,0,.1,-.142),
-  M(new THREE.CylinderGeometry(.014,.014,.12,8),blk,0,.0,-.1),fist());
+{const st=mat(0xc5ced6,{roughness:.32,metalness:.62}),blk=mat(0x2a2d31,{roughness:.5,metalness:.6}),glv=mat(0x7a5530,{roughness:.9}),yel=mat(0xf0b400,{roughness:.45,metalness:.3}),rub=mat(0x1a1a1a,{roughness:.85}),M=(g,m,x=0,y=0,z=0)=>{const o=new THREE.Mesh(g,m);o.position.set(x,y,z);return o},fist=()=>{const f=M(new THREE.SphereGeometry(.058,12,9),glv);f.scale.set(1.25,1,1.1);return f};
+ /* probe: T-handle with end grips, banded shaft, point down */
+ hp.add(M(new THREE.CylinderGeometry(.011,.011,1.05,10),st,0,-.56),M(new THREE.ConeGeometry(.02,.12,10).rotateX(Math.PI),st,0,-1.15),
+  M(new THREE.CylinderGeometry(.016,.016,.28,10).rotateZ(Math.PI/2),blk),M(new THREE.SphereGeometry(.02,8,6),rub,-.14),M(new THREE.SphereGeometry(.02,8,6),rub,.14),
+  M(new THREE.CylinderGeometry(.014,.014,.03,8),yel,0,-.28),fist());
+ /* flashlight: body along the view, collars around it, bezel and lens at the front */
+ hf.add(M(new THREE.CylinderGeometry(.034,.034,.2,14).rotateX(Math.PI/2),blk,0,0,-.1),
+  M(new THREE.CylinderGeometry(.04,.04,.012,12).rotateX(Math.PI/2),st,0,0,-.05),M(new THREE.CylinderGeometry(.04,.04,.012,12).rotateX(Math.PI/2),st,0,0,-.15),
+  M(new THREE.CylinderGeometry(.05,.038,.07,14).rotateX(Math.PI/2),yel,0,0,-.23),M(new THREE.CylinderGeometry(.02,.02,.012,8).rotateZ(Math.PI/2),blk,0,.04,-.08),
+  M(new THREE.CylinderGeometry(.036,.036,.016,12).rotateX(Math.PI/2),blk,0,0,.015),
+  M(new THREE.CircleGeometry(.042,16).rotateY(Math.PI),hfLens,0,0,-.268),fist());
+ /* garden light: the same flood head as the tripod, small enough to carry */
+ hl.add(M(new THREE.BoxGeometry(.28,.18,.09),yel,0,.1,-.12),M(new THREE.BoxGeometry(.32,.22,.02),blk,0,.1,-.07),M(new THREE.BoxGeometry(.32,.03,.1),blk,0,.21,-.1),
+  M(new THREE.PlaneGeometry(.22,.13).rotateY(Math.PI),hlLens,0,.1,-.168));
+ for(let k=-2;k<=2;k++)hl.add(M(new THREE.BoxGeometry(.008,.14,.008),blk,k*.04,.1,-.176));
+ hl.add(M(new THREE.CylinderGeometry(.014,.014,.12,8),blk,0,0,-.1),fist());
  for(const g of[hp,hf,hl]){g.traverse(o=>{if(o.isMesh)o.castShadow=false});g.visible=false;cam.add(g)}}
 const HB=[{n:'Shovel',ok:()=>1},{n:'Ground probe',ok:()=>1},{n:'Flashlight',ok:()=>Prog.up.lantern>0,need:'Buy a flashlight at the workbench'},{n:'Garden light',ok:()=>Prog.up.lamps>0,need:'Buy garden lights at the workbench'}];
 let sel=0,want=0,swapK=0,pa=0;/* sel = item in hand, want = item being raised, swapK = lowering/raising animation, pa = probe-push animation */
 function hbShow(){document.querySelectorAll('.hb').forEach((e,i)=>{e.classList.toggle('on',i===want);e.classList.toggle('lock',!HB[i].ok())});$('hbName').textContent=HB[want].n}
 function hbSelect(i){if(i===want||i<0||i>=HB.length)return;if(!HB[i].ok()){toast(HB[i].need);return}want=i;holding=false;hbShow()}
 /* ---------- push mower: deck, wheels, engine, bag, handle. Spawned near the house path each yard ---------- */
-const mower=new THREE.Group();{const body=mat(0xc0392b,{roughness:.55,metalness:.15}),steel2=mat(0xc8d0d6,{roughness:.35,metalness:.6}),tyre=mat(0x222222,{roughness:.9});
- const deck=new THREE.Mesh(new THREE.CylinderGeometry(.42,.45,.16,20),body);deck.position.y=.26;mower.add(deck);
- const chute=new THREE.Mesh(new THREE.BoxGeometry(.28,.1,.34),body);chute.position.set(0,.34,-.32);mower.add(chute);
- const eng=new THREE.Mesh(new THREE.BoxGeometry(.3,.22,.3),mat(0x2c2c2c,{roughness:.6,metalness:.4}));eng.position.set(0,.42,.05);mower.add(eng);
- const bag=new THREE.Mesh(new THREE.BoxGeometry(.46,.4,.28),mat(0x6b5a3a,{roughness:.95}));bag.position.set(0,.52,-.55);mower.add(bag);
- const handle=new THREE.Mesh(new THREE.CylinderGeometry(.018,.018,.9,8),steel2);handle.position.set(0,.72,-.72);handle.rotation.x=-.85;mower.add(handle);
- const grip=new THREE.Mesh(new THREE.CylinderGeometry(.016,.016,.34,8),mat(0x111111,{roughness:.8}));grip.position.set(0,1.05,-1.02);grip.rotation.z=Math.PI/2;mower.add(grip);
- mower.wheels=[];for(const[wx,wz]of[[-.34,.28],[.34,.28],[-.34,-.28],[.34,-.28]]){const w=new THREE.Mesh(new THREE.CylinderGeometry(wz<0?.11:.17,wz<0?.11:.17,.06,12),tyre);w.rotation.z=Math.PI/2;w.position.set(wx,.17,wz);mower.add(w);mower.wheels.push(w)}
- [deck,chute,eng,bag].forEach(m=>{m.castShadow=m.receiveShadow=true});scene.add(mower)}
+const mower=new THREE.Group();{const body=mat(0xd23b2e,{roughness:.48,metalness:.14}),steel=mat(0xd5dbe0,{roughness:.3,metalness:.62}),dark=mat(0x1a1a1a,{roughness:.75,metalness:.3}),tyre=mat(0x161616,{roughness:.96}),canvas=mat(0xcbb98a,{roughness:.94});
+ const add=m=>{m.castShadow=m.receiveShadow=true;mower.add(m);return m};
+ const rod=(r,a,b,mt)=>{const d=b.clone().sub(a),len=Math.max(.001,d.length()),m=add(new THREE.Mesh(new THREE.CylinderGeometry(r,r,len,7),mt));m.position.copy(a).add(b).multiplyScalar(.5);m.quaternion.setFromUnitVectors(new V3(0,1,0),d.multiplyScalar(1/len));return m};
+ add(new THREE.Mesh(new THREE.CylinderGeometry(.33,.36,.09,20),body)).position.set(0,.2,.06);
+ const housing=add(new THREE.Mesh(new THREE.BoxGeometry(.64,.09,.36),body));housing.position.set(0,.2,-.14);
+ add(new THREE.Mesh(new THREE.BoxGeometry(.68,.035,.7),dark)).position.set(0,.145,-.02);
+ const stripe=add(new THREE.Mesh(new THREE.BoxGeometry(.46,.012,.07),mat(0xf6f1e6,{roughness:.45})));stripe.position.set(0,.248,.1);
+ add(new THREE.Mesh(new THREE.BoxGeometry(.46,.025,.05),steel)).position.set(0,.175,.4);
+ const flap=add(new THREE.Mesh(new THREE.BoxGeometry(.48,.12,.016),dark));flap.position.set(0,.11,-.34);flap.rotation.x=.45;
+ add(new THREE.Mesh(new THREE.BoxGeometry(.24,.15,.26),dark)).position.set(0,.32,.02);
+ add(new THREE.Mesh(new THREE.CylinderGeometry(.085,.095,.07,14),dark)).position.set(0,.43,.02);
+ add(new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,.025,10),body)).position.set(.05,.475,-.02);
+ const muff=add(new THREE.Mesh(new THREE.CylinderGeometry(.028,.028,.16,8),steel));muff.rotation.z=Math.PI/2;muff.position.set(.18,.34,.02);
+ add(new THREE.Mesh(new THREE.BoxGeometry(.07,.09,.09),dark)).position.set(-.15,.33,.02);
+ const chute=add(new THREE.Mesh(new THREE.BoxGeometry(.16,.07,.2),body));chute.position.set(0,.3,-.32);chute.rotation.x=-.4;
+ const bag=add(new THREE.Mesh(new THREE.BoxGeometry(.4,.3,.2),canvas));bag.position.set(0,.44,-.5);bag.rotation.x=.12;
+ add(new THREE.Mesh(new THREE.BoxGeometry(.42,.035,.22),dark)).position.set(0,.58,-.46);
+ mower.wheels=[];
+ const wheel=(x,z,rad)=>{const g=new THREE.Group();g.position.set(x,rad,z);g.rotation.z=Math.PI/2;mower.add(g);
+  [new THREE.Mesh(new THREE.CylinderGeometry(rad,rad,.055,16),tyre),new THREE.Mesh(new THREE.CylinderGeometry(rad*.4,rad*.4,.064,12),steel),new THREE.Mesh(new THREE.CylinderGeometry(rad*.16,rad*.16,.078,8),dark)].forEach(p=>{p.castShadow=true;g.add(p);mower.wheels.push(p)})};
+ wheel(-.36,.34,.085);wheel(.36,.34,.085);wheel(-.38,-.18,.155);wheel(.38,-.18,.155);
+ rod(.012,new V3(-.36,.085,.34),new V3(.36,.085,.34),steel);rod(.015,new V3(-.38,.155,-.18),new V3(.38,.155,-.18),steel);
+ const Lg=new V3(-.22,.92,-.88),Rg=new V3(.22,.92,-.88);
+ rod(.015,new V3(-.22,.24,-.1),Lg,steel);rod(.015,new V3(.22,.24,-.1),Rg,steel);
+ rod(.017,Lg,Rg,mat(0x111111,{roughness:.85}));
+ rod(.011,new V3(-.2,.84,-.74),new V3(.2,.84,-.74),dark);
+ scene.add(mower)}
 const MTURN=.8;/* max mower turn rate while pushed, rad/s */
 let mh=0,mowerHeld=false,mowerOn=false,mowerOwner=null,mowerTarget=null,clipM,mowX,mowZ;/* mowerHeld: I own it; mowerOwner: id of whoever does (co-op) */
 function placeMower(){mowerHeld=false;mowerOn=false;mowerOwner=null;mowerTarget=null;mowX=undefined;mowQ.length=0;mower.position.set(MOWS[0],world.hAt(MOWS[0],MOWS[1]),MOWS[1]);mower.rotation.set(0,0,0);if(clipM){clipM.gain.gain.value=0;clipM.blade.gain.value=0}}
@@ -612,19 +641,20 @@ const glBulbs=[0,1,2,3].map(()=>new THREE.MeshBasicMaterial({color:new THREE.Col
 /* outdoor outlet plate with a rocker switch and a status LED (red = off, green = on) */
 PARENT=houseG;box(.17,.28,.04,0xe8e4d8,SOCK0[0],1.0,-9.98,{roughness:.5});box(.075,.12,.03,0x22252a,SOCK0[0],1.06,-9.955);box(.1,.07,.02,0xcfcbc0,SOCK0[0],.93,-9.955);
 {const led=new THREE.Mesh(new THREE.SphereGeometry(.014,8,6),sockLed);led.position.set(SOCK0[0]+.055,1.11,-9.955);houseG.add(led)}PARENT=scene;
-/* construction-site work light: yellow tripod stand, tall mast, tilted flood-light head with a grille */
+/* construction-site work light: yellow tripod, mast, tilted flood head with a visor and grille */
 const GL_H=2.3,GL_I=.85;/* GL_I = work-light brightness *//* mast height in m */
 {const gm=(g,c,o)=>{const m=new THREE.Mesh(g,mat(c,o));m.castShadow=true;return m},paint={roughness:.45,metalness:.3},steel={roughness:.5,metalness:.6},Y=0xf0b400,UP=new V3(0,1,0);
- for(let i=0;i<GLN;i++){const g=new THREE.Group();
+ for(let i=0;i<GLN;i++){const g=new THREE.Group(),mids=[];
   g.add(gm(new THREE.CylinderGeometry(.03,.036,GL_H,8).translate(0,GL_H/2,0),Y,paint),gm(new THREE.CylinderGeometry(.05,.05,.1,8).translate(0,.95,0),0x2a2d31,steel),gm(new THREE.CylinderGeometry(.045,.045,.06,8).translate(0,GL_H,0),0x2a2d31,steel));
   for(let k=0;k<3;k++){const a=k*Math.PI*2/3+.5,r=.62,e=new V3(Math.cos(a)*r,0,Math.sin(a)*r),s0=new V3(0,.95,0),d=e.clone().sub(s0),len=d.length(),leg=gm(new THREE.CylinderGeometry(.017,.017,len,6),Y,paint);
    leg.position.copy(s0).add(e).multiplyScalar(.5);leg.quaternion.setFromUnitVectors(UP,d.normalize());g.add(leg);
-   const foot=gm(new THREE.CylinderGeometry(.045,.045,.025,8),0x1d1f22,steel);foot.position.set(e.x,.012,e.z);g.add(foot)}
+   const foot=gm(new THREE.CylinderGeometry(.045,.045,.025,8),0x1d1f22,steel);foot.position.set(e.x,.012,e.z);g.add(foot);mids.push(s0.clone().lerp(e,.5))}
+  for(let k=0;k<3;k++){const a=mids[k],b=mids[(k+1)%3],d=b.clone().sub(a),len=d.length(),br=gm(new THREE.CylinderGeometry(.008,.008,len,5),0x2a2d31,steel);br.position.copy(a).add(b).multiplyScalar(.5);br.quaternion.setFromUnitVectors(UP,d.normalize());g.add(br)}
   const head=new THREE.Group();head.position.set(0,GL_H+.2,0);head.rotation.x=.42;
   head.add(gm(new THREE.BoxGeometry(.5,.34,.15),Y,paint),gm(new THREE.BoxGeometry(.54,.38,.03).translate(0,0,-.075),0x2a2d31,steel),
-   gm(new THREE.BoxGeometry(.54,.04,.2).translate(0,.19,.05),0x2a2d31,steel));
-  const lens=new THREE.Mesh(new THREE.PlaneGeometry(.42,.26).translate(0,0,.077),glBulbs[i]);head.add(lens);
-  for(let k=-2;k<=2;k++)head.add(gm(new THREE.BoxGeometry(.012,.28,.012).translate(k*.09,0,.088),0x1d1f22,steel));
+   gm(new THREE.BoxGeometry(.54,.04,.18).translate(0,.2,.02),0x2a2d31,steel));
+  const lens=new THREE.Mesh(new THREE.PlaneGeometry(.42,.26).translate(0,0,.08),glBulbs[i]);head.add(lens);
+  for(let k=-2;k<=2;k++)head.add(gm(new THREE.BoxGeometry(.01,.26,.01).translate(k*.08,0,.09),0x1d1f22,steel));
   const yk=gm(new THREE.CylinderGeometry(.02,.02,.1,6).translate(0,-.08,0),0x2a2d31,steel);g.add(yk);yk.position.set(0,GL_H+.1,0);
   g.add(head);g.visible=false;scene.add(g);glObj.push(g);
   const L=new THREE.PointLight(lin(0xffd49a),0,11,1.5);L.position.set(0,-50,0);scene.add(L);glLights.push(L);
@@ -856,7 +886,7 @@ function play(dt){
  if(mowerHeld){/* only the owner cuts; everyone else gets the cut cells from the host */
   if(mowX===undefined){mowX=mx;mowZ=mz}const steps=Math.max(1,Math.ceil(Math.hypot(mx-mowX,mz-mowZ)/.25));
   for(let s=1;s<=steps;s++)mowAt(mowX+(mx-mowX)*s/steps,mowZ+(mz-mowZ)*s/steps,MRAD[Prog.up.mower]);mowX=mx;mowZ=mz}
- mower.wheels.forEach(w=>w.rotation.x+=dt*18);
+ mower.wheels.forEach(w=>w.rotation.y+=dt*14);
   if(Math.random()<.6)spawn(mower.position.clone().add(new V3((Math.random()-.5)*.6,.3,(Math.random()-.5)*.6)),new V3((Math.random()-.5)*1.2,1+Math.random(),(Math.random()-.5)*1.2),.6,false,soilMat(-1,0),.2+Math.random()*.15)}
  if(AC&&clipM){const on=mowerOn&&state==='play'&&!paused,att=mowerHeld?1:Math.max(.12,1-Math.hypot(px-mower.position.x,pz-mower.position.z)/18);clipM.gain.gain.setTargetAtTime(on?.05*att:0,AC.currentTime,.15);clipM.blade.gain.setTargetAtTime(on?.012*att:0,AC.currentTime,.15)}
  /* carried rock sits in the hands */
