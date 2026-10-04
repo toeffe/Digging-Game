@@ -2,21 +2,30 @@
    (local loopback now; swap for a WebSocket relay + shared seed for multiplayer). */
 const $=id=>document.getElementById(id),V3=THREE.Vector3;
 const N=100,S=20,C=S/N,FLOOR=-5.6,ME='local',KIND={tank:'a buried septic tank',iron:'an old cast-iron pipe',gas:'a gas line — careful!',well:'an old well ring'};
+const FIND={can:['trash',5,'a tin can'],bottle:['trash',5,'a glass bottle'],boot:['trash',10,'an old boot'],coin:['artifact',50,'a coin'],arrow:['artifact',75,'an arrowhead'],pot:['artifact',100,'a clay pot'],idol:['artifact',150,'a golden idol']};
+const FSZ={can:.08,bottle:.09,boot:.06,coin:.02,arrow:.04,pot:.07,idol:.09};/* half-height, origin at the mesh centre */
+const BIN=[-9,3],CRATE=[9,4];
 function rng(s){return()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
-const PROT=[[-8,-6,1.1],[8.3,-4,.9],[-7.6,6.5,1],[-9,3,.6]];/* x, z, protect radius for trees + bin */
+const PROT=[[-8,-6,1.1],[8.3,-4,.9],[-7.6,6.5,1],[BIN[0],BIN[1],.6],[CRATE[0],CRATE[1],.9]];/* x, z, protect radius for trees, bin, crate */
 class World{
  constructor(seed){this.seed=seed;const r=rng(seed),n=(N+1)**2,p=[r()*6,r()*6,r()*6];
   this.H=new Float32Array(n);this.B=new Float32Array(n);this.D=new Uint8Array(n);this.PW=new Float32Array(n).fill(1);this.digs=0;
   for(let j=0;j<=N;j++)for(let i=0;i<=N;i++){const x=i*C-S/2,z=j*C-S/2,k=j*(N+1)+i,e=Math.min(i,j,N-i,N-j)*C,f=Math.min(1,e/2.5);
    /* base relief fades to exactly 0 at the border so it meets the flat outer ground with no gap */
    this.H[k]=this.B[k]=(.12*Math.sin(x*.35+p[0])*Math.cos(z*.3+p[1])+.05*Math.sin(x*.9+z*.7+p[2]))*f*f*(3-2*f);
-   /* roots hold the soil under trees / the bin: dig weight ramps 0 -> 1 from .7r to 1.2r around each */
+   /* roots hold the soil under trees, the bin and the crate: dig weight ramps 0 -> 1 from .7r to 1.2r around each */
    for(const[ox,oz,or]of PROT){const t=Math.min(1,Math.max(0,(Math.hypot(x-ox,z-oz)/or-.7)/.5));this.PW[k]=Math.min(this.PW[k],t*t*(3-2*t))}}
   this.sig=[];const top={burst:.16,tank:.55,iron:.17,gas:.13,well:.5};
   const place=(kind,y)=>{let x,z,t=0;do{x=(r()-.5)*15;z=(r()-.5)*15}while(t++<80&&this.sig.some(s=>Math.hypot(s.x-x,s.z-z)<5));this.sig.push({kind,x,y,z,top:top[kind],f:0,a:r()*3.14})};
   place('burst',-3.5-r()*.4);place('tank',-1.8-r()*.5);place('iron',-1.5-r()*.5);place('gas',-1.3-r()*.5);place('well',-2.2-r()*.4);
   const b=this.sig[0],a=b.a;this.burst=new V3(b.x,b.y,b.z);
-  this.curve=new THREE.CatmullRomCurve3([-6,-2.5,0,2.5,6].map(s=>new V3(b.x+Math.cos(a)*s,b.y+s*.02,b.z+Math.sin(a)*s)));this.bt=.5}
+  this.curve=new THREE.CatmullRomCurve3([-6,-2.5,0,2.5,6].map(s=>new V3(b.x+Math.cos(a)*s,b.y+s*.02,b.z+Math.sin(a)*s)));this.bt=.5;
+  /* trash sits shallow, artifacts deep; depth is below the local surface so nothing pokes through the lawn */
+  this.score=0;this.finds=[];
+  const spot=()=>{let x,z,t=0;do{x=(r()-.5)*16.4;z=(r()-.5)*16.4}while(++t<80&&(PROT.some(([ox,oz,or])=>Math.hypot(x-ox,z-oz)<or+1.15)||this.finds.some(q=>Math.hypot(q.x-x,q.z-z)<1.35)||this.sig.some(s=>Math.hypot(s.x-x,s.z-z)<1.5)||Math.hypot(x-2.4,z+7.4)<1.7));return[x,z]};
+  const bury=(kind,d0,d1)=>{const[type,pts]=FIND[kind],[x,z]=spot();this.finds.push({kind,type,pts,sz:FSZ[kind],x,y:this.hAt(x,z)-(d0+r()*(d1-d0)),z,a:r()*6.283,held:0,done:0,out:0})};
+  for(let i=0;i<4;i++)for(const k of['can','bottle','boot'])bury(k,.2,1.8);
+  for(const k of['coin','arrow','pot','idol','coin'])bury(k,1.5,4)}
  hAt(x,z){const u=(x+S/2)/C,v=(z+S/2)/C;let i=Math.max(0,Math.min(N-1,Math.floor(u))),j=Math.max(0,Math.min(N-1,Math.floor(v)));
   const fu=Math.min(1,Math.max(0,u-i)),fv=Math.min(1,Math.max(0,v-j)),H=this.H,k=j*(N+1)+i;
   return(H[k]*(1-fu)+H[k+1]*fu)*(1-fv)+(H[k+N+1]*(1-fu)+H[k+N+2]*fu)*fv}
@@ -117,8 +126,16 @@ function perimeter(){const a=-52,b=52,c=-34,e=62;hedgeLine(a,c,b,c,3.8,1.9);hedg
  /* trees + bin: soil around them is held by roots (see PROT in World), so they never float or sink */
  [[-8,-6,1.4],[8.3,-4,1.1],[-7.6,6.5,1.2]].forEach(([x,z,s])=>{cyl(.16*s,.3*s,2.4*s,0x4d3520,x,1.2*s,z);
   [[0,3.3,0,1.5],[.8,4,-.3,1.1],[-.8,3.9,.4,1.15],[.2,4.6,.1,.95],[0,3,.9,1],[-.3,3.2,-.9,1]].forEach(([a,b,c,r],i)=>blob(r*s,i%2?0x3a7a30:0x2d6a2c,x+a*s,b*s,z+c*s));obst.push({x,z,r:.5*s})});
- const rb=rng(7);for(let k=0;k<14;k++){const t=-9+k*1.4;[[9.3,t],[-9.3,t],[t,9.3]].forEach(([x,z])=>{if(rb()<.5){const s=.5+rb()*.5;blob(s,rb()<.5?0x2d6a2b:0x3d8036,x,s*.7,z,1.2,.85,1.2)}})}
- cyl(.35,.3,.9,0x6b7378,-9,.45,3,{roughness:.5,metalness:.3});cyl(.38,.38,.08,0x4c5358,-9,.92,3);
+ const rb=rng(7);for(let k=0;k<14;k++){const t=-9+k*1.4;[[9.3,t],[-9.3,t],[t,9.3]].forEach(([x,z])=>{if(rb()<.5){const s=.5+rb()*.5,c=rb()<.5;if(Math.hypot(x-CRATE[0],z-CRATE[1])>1.35)blob(s,c?0x2d6a2b:0x3d8036,x,s*.7,z,1.2,.85,1.2)}})}
+ cyl(.35,.3,.9,0x6b7378,BIN[0],.45,BIN[1],{roughness:.5,metalness:.3});cyl(.38,.38,.08,0x4c5358,BIN[0],.92,BIN[1]);
+ /* open crate for artifacts, facing the yard */
+ const[cx,cz]=CRATE;
+ box(1.02,.08,.78,0xffffff,cx,.08,cz,{map:wood,roughness:.85});
+ box(.07,.5,.78,0xffffff,cx-.47,.36,cz,{map:wood,roughness:.85});box(.07,.5,.78,0xffffff,cx+.47,.36,cz,{map:wood,roughness:.85});
+ box(1.02,.5,.07,0xffffff,cx,.36,cz-.35,{map:wood,roughness:.85});box(1.02,.5,.07,0xffffff,cx,.36,cz+.35,{map:wood,roughness:.85});
+ box(.84,.18,.6,0x241c16,cx,.24,cz,{roughness:1});
+ for(const yy of[.24,.46])box(.02,.04,.66,0x6b5340,cx-.52,yy,cz,{roughness:.9});
+ obst.push({x:cx,z:cz,r:.7});
 }
 
 /* ---------- surrounding world: hills, street, neighbours, forest ---------- */
@@ -195,7 +212,8 @@ function mowAt(x,z,rad){let ch=0;const i0=Math.max(0,Math.floor((x-rad+S/2)/MC))
    go.position.set(q.x,q.y,q.z);go.rotation.set(0,0,0);go.scale.set(1,q.s*.12,1);go.updateMatrix();grass.setMatrixAt(n,go.matrix)}}
  if(ch)grass.instanceMatrix.needsUpdate=true}
 /* a dig needs the aim spot and its neighbours within ~1 m mown (no grass cells count as mown) */
-function isMown(x,z){for(let j=-2;j<=2;j++)for(let i=-2;i<=2;i++){const cx=x+i*MC,cz=z+j*MC;if(Math.hypot(i,j)>2.2||Math.abs(cx)>9.9||Math.abs(cz)>9.9)continue;if(!mown[mcell(cx,cz)]&&gbuck[mcell(cx,cz)].length)return false}return true}
+function isMown(x,z){for(let j=-2;j<=2;j++)for(let i=-2;i<=2;i++){const cx=x+i*MC,cz=z+j*MC;if(Math.hypot(i,j)>2.2||Math.abs(cx)>9.9||Math.abs(cz)>9.9)continue;const ci=mcell(cx,cz);if(mown[ci]||!gbuck[ci].length)continue;/* a dug cell has lost its grass, so it no longer blocks the shovel */
+  if(gbuck[ci].some(n=>!gp[n].gone&&!gp[n].cut))return false}return true}
 /* static grass beyond the fence so the surroundings match the lawn; thins out with distance */
 {const ON=40000,og=new THREE.InstancedMesh(gg,grass.material,ON),r=rng(5);og.receiveShadow=true;og.frustumCulled=false;
  for(let n=0;n<ON;){const x=(r()-.5)*47,z=(r()-.5)*47,d=Math.max(Math.abs(x),Math.abs(z));
@@ -237,6 +255,24 @@ function buildBuried(){if(pipeG)scene.remove(pipeG);pipeG=new THREE.Group();cons
   add(m,s.x,s.y,s.z)}
  scene.add(pipeG)}
 
+/* buried finds: hidden until the soil above them is gone, then they sit on the hole floor */
+function syncFind(f){if(f.done||f.held){f.m.visible=false;return}const h=world.hAt(f.x,f.z);if(f.out||f.y+f.sz>=h-.02){f.out=1;f.y=h+f.sz}f.m.position.set(f.x,f.y,f.z);f.m.rotation.set(0,f.a,0);f.m.visible=!!f.out}
+function findOut(f){return !f.done&&!f.held&&!!f.out}
+function settleFinds(x,z){for(const f of world.finds){if(f.done||f.held||Math.abs(f.x-x)>7||Math.abs(f.z-z)>7)continue;syncFind(f)}}
+let findG;
+function buildFinds(){if(findG){findG.traverse(o=>{if(o.isMesh){o.geometry.dispose();o.material.dispose()}});scene.remove(findG)}
+ findG=new THREE.Group();scene.add(findG);
+ const mesh=(g,c,o)=>{const m=new THREE.Mesh(g,mat(c,o));m.castShadow=m.receiveShadow=true;return m},gold={metalness:.85,roughness:.28,emissive:0x6a5010,emissiveIntensity:.28};
+ for(const f of world.finds){const g=new THREE.Group();
+  if(f.kind==='can'){const m=mesh(new THREE.CylinderGeometry(.05,.052,.12,10),0xc5c9c4,{roughness:.35,metalness:.72});m.rotation.z=1;const lid=mesh(new THREE.CylinderGeometry(.054,.054,.014,10),0xd5d8d2,{roughness:.3,metalness:.8});lid.position.y=.06;m.add(lid);g.add(m)}
+  else if(f.kind==='bottle'){const b=mesh(new THREE.CylinderGeometry(.028,.034,.11,8),0x2f6a4a,{transparent:true,opacity:.8,roughness:.12,metalness:.05});b.position.y=-.02;const n=mesh(new THREE.CylinderGeometry(.012,.015,.05,8),0x3d7a58,{transparent:true,opacity:.8,roughness:.12});n.position.y=.06;g.add(b,n)}
+  else if(f.kind==='boot'){const sole=mesh(new THREE.BoxGeometry(.15,.04,.07),0x4a3224,{roughness:1});sole.position.y=-.02;const u=mesh(new THREE.BoxGeometry(.07,.08,.068),0x3b291c,{roughness:1});u.position.set(-.035,.03,0);g.add(sole,u)}
+  else if(f.kind==='coin')g.add(mesh(new THREE.CylinderGeometry(.05,.05,.018,16),0xe2b434,gold))
+  else if(f.kind==='arrow'){const m=mesh(new THREE.ConeGeometry(.034,.11,4),0x8a8074,{roughness:.82,emissive:0x3a342c,emissiveIntensity:.3});m.rotation.z=Math.PI/2;g.add(m)}
+  else if(f.kind==='pot'){const pts=[];for(let i=0;i<=7;i++){const t=i/7;pts.push(new THREE.Vector2(.024+.058*Math.sin(t*2.2)*(.45+.55*Math.sin(t*Math.PI)),t*.13))}const m=mesh(new THREE.LatheGeometry(pts,9),0xb4683c,{roughness:.92,emissive:0x4a2818,emissiveIntensity:.22});m.position.y=-.065;g.add(m)}
+  else{const body=mesh(new THREE.ConeGeometry(.045,.11,6),0xe2b434,gold);body.position.y=-.01;const head=mesh(new THREE.SphereGeometry(.03,8,6),0xf0d060,gold);head.position.y=.075;g.add(body,head)}
+  f.m=g;g.visible=false;findG.add(g);syncFind(f)}}
+
 /* ---------- shovel, markers, particles ---------- */
 /* first-person shovel. Built along +Y (tip at y=0, D-grip at y=1.2), then tilted so the blade points forward-down-centre
    and the handle runs back to the lower-right. `sh` (origin = grip) is what the dig animation pivots. */
@@ -270,10 +306,12 @@ const mower=new THREE.Group();{const body=mat(0xc0392b,{roughness:.55,metalness:
  mower.wheels=[];for(const[wx,wz]of[[-.34,.28],[.34,.28],[-.34,-.28],[.34,-.28]]){const w=new THREE.Mesh(new THREE.CylinderGeometry(wz<0?.11:.17,wz<0?.11:.17,.06,12),tyre);w.rotation.z=Math.PI/2;w.position.set(wx,.17,wz);mower.add(w);mower.wheels.push(w)}
  [deck,chute,eng,bag].forEach(m=>{m.castShadow=m.receiveShadow=true});scene.add(mower)}
 let mowerHeld=false,mowerOn=false,clipM,mowX,mowZ;
-function placeMower(){mowerHeld=false;mowerOn=false;mower.position.set(2.4,world.hAt(2.4,-7.4),-7.4);mower.rotation.set(0,0,0);if(clipM)clipM.gain.value=0}
+function placeMower(){mowerHeld=false;mowerOn=false;mower.position.set(2.4,world.hAt(2.4,-7.4),-7.4);mower.rotation.set(0,0,0);if(clipM){clipM.gain.gain.value=0;clipM.blade.gain.value=0}}
 /* ---------- carried rock (drawn in the hands; the instance stays hidden in `rocks`) ---------- */
-let carry=-1;const carryM=new THREE.Mesh(rockG,mat(0xffffff,{roughness:.95}));carryM.castShadow=true;carryM.visible=false;cam.add(carryM);
-const handsBusy=()=>mowerHeld||carry>=0;
+let carry=-1,carryF=-1,carryFM=null;const carryM=new THREE.Mesh(rockG,mat(0xffffff,{roughness:.95}));carryM.castShadow=true;carryM.visible=false;cam.add(carryM);
+const handsBusy=()=>mowerHeld||carry>=0||carryF>=0;
+function clearCarryF(){carryF=-1;if(carryFM){cam.remove(carryFM);carryFM=null}}
+function holdFind(n){if(carryFM)cam.remove(carryFM);carryF=n;const f=world.finds[n];carryFM=f.m.clone(true);carryFM.visible=true;carryFM.traverse(o=>{if(o.isMesh)o.castShadow=true});carryFM.scale.setScalar(Math.min(2.4,.1/Math.max(.03,f.sz)));cam.add(carryFM)}
 const rings=[],rgeo=new THREE.RingGeometry(.985,1,120).rotateX(-Math.PI/2);
 function addRing(x,z,r){const m=new THREE.Mesh(rgeo,new THREE.MeshBasicMaterial({color:0x7fe0ff,transparent:true,opacity:.6,depthTest:false,toneMapped:false}));m.position.set(x,.35,z);m.scale.setScalar(.01);m.renderOrder=5;scene.add(m);rings.push({m,r,t:0});if(rings.length>30){scene.remove(rings.shift().m)}}
 const pg=new THREE.IcosahedronGeometry(.07,0),waterM=new THREE.MeshBasicMaterial({color:0x9fd4ff,transparent:true,opacity:.8}),parts=[],pmc={};
@@ -289,12 +327,18 @@ function stepParts(dt){for(let i=parts.length-1;i>=0;i--){const q=parts[i],P=q.m
 let AC,NB,hissG;
 function audio(){if(AC){AC.resume();return}AC=new(window.AudioContext||window.webkitAudioContext)();NB=AC.createBuffer(1,AC.sampleRate*2,AC.sampleRate);const d=NB.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
  const lp=(type,fq,g)=>{const s=AC.createBufferSource();s.buffer=NB;s.loop=true;const f=AC.createBiquadFilter();f.type=type;f.frequency.value=fq;const o=AC.createGain();o.gain.value=g;s.connect(f);f.connect(o);o.connect(AC.destination);s.start();return o};
- lp('lowpass',350,.06);hissG=lp('bandpass',3200,0);clipM=lp('bandpass',900,0)}
+ lp('lowpass',350,.06);hissG=lp('bandpass',3200,0);
+ /* mower: a droning single-cylinder engine (two slightly detuned saws) plus a quiet blade whir */
+ const mo=AC.createOscillator(),mo2=AC.createOscillator(),mb=AC.createOscillator();mo.type=mo2.type='sawtooth';mb.type='triangle';mo.frequency.value=62;mo2.frequency.value=63.5;mb.frequency.value=190;
+ const mf=AC.createBiquadFilter();mf.type='lowpass';mf.frequency.value=420;mf.Q.value=.7;const mg=AC.createGain();mg.gain.value=0;const mbg=AC.createGain();mbg.gain.value=0;
+ mo.connect(mf);mo2.connect(mf);mf.connect(mg);mb.connect(mbg);mg.connect(AC.destination);mbg.connect(AC.destination);mo.start();mo2.start();mb.start();clipM={gain:mg,blade:mbg}}
 function nz(type,fq,dur,vol,dl=0){if(!AC)return;const s=AC.createBufferSource();s.buffer=NB;const f=AC.createBiquadFilter();f.type=type;f.frequency.value=fq;const g=AC.createGain(),t=AC.currentTime+dl;g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.001,t+dur);s.connect(f);f.connect(g);g.connect(AC.destination);s.start(t,Math.random(),dur)}
 function grain(n,span,type,f0,f1,vol,dl=0){for(let i=0;i<n;i++)nz(type,f0+Math.random()*(f1-f0),.04,vol*(.5+Math.random()*.5),dl+Math.random()*span)}
 function sweep(type,f0,f1,dur,vol,dl=0){if(!AC)return;const s=AC.createBufferSource();s.buffer=NB;const f=AC.createBiquadFilter();f.type=type;f.Q.value=2;const g=AC.createGain(),t=AC.currentTime+dl;f.frequency.setValueAtTime(f0,t);f.frequency.exponentialRampToValueAtTime(f1,t+dur);g.gain.setValueAtTime(.001,t);g.gain.linearRampToValueAtTime(vol,t+dur*.2);g.gain.exponentialRampToValueAtTime(.001,t+dur);s.connect(f);f.connect(g);g.connect(AC.destination);s.start(t,Math.random(),dur)}
 /* shovel bites in (gritty scrape), lifts, then the load thumps and showers off */
 function thud(){sweep('bandpass',3600,800,.2,.4);grain(10,.2,'bandpass',900,3400,.25);nz('lowpass',280,.4,1,.26);nz('lowpass',1100,.18,.4,.26);grain(16,.4,'lowpass',250,800,.2,.28);if(Math.random()<.2)grain(2,.1,'highpass',4000,6000,.2,.12)}
+function clank(){nz('highpass',2400,.08,.4);nz('bandpass',680,.14,.35);nz('lowpass',160,.1,.3)}
+function ping(){if(!AC)return;const o=AC.createOscillator(),g=AC.createGain(),t=AC.currentTime;o.type='sine';o.frequency.setValueAtTime(740,t);o.frequency.exponentialRampToValueAtTime(1480,t+.08);g.gain.setValueAtTime(.001,t);g.gain.exponentialRampToValueAtTime(.16,t+.02);g.gain.exponentialRampToValueAtTime(.001,t+.3);o.connect(g);g.connect(AC.destination);o.start(t);o.stop(t+.32)}
 function stepSnd(){const k=Math.round((pz+S/2)/C)*(N+1)+Math.round((px+S/2)/C);
  if(pz<-8&&Math.abs(px)<4){nz('bandpass',1600,.05,.25);nz('lowpass',300,.06,.35)}
  else if(world.D[k]){nz('lowpass',650,.13,.4+Math.random()*.1);grain(4,.08,'bandpass',1500,3800,.14)}
@@ -337,7 +381,7 @@ window.fxResize=(w,h)=>{rtC.setSize(w,h);rtD.setSize(w>>1,h>>1);rtB1.setSize(w>>
 function fxRender(){
  sunS.forEach(q=>q.position.copy(cam.position).addScaledVector(sdir,170));
  R.setRenderTarget(rtC);R.setClearColor(0x000000,1);R.clear(true,true,true);R.render(scene,cam);
- const os=[sh,...sunS,...rings.map(q=>q.m)],vs=os.map(o=>o.visible);os.forEach(o=>o.visible=false);
+ const os=[sh,carryM,...(carryFM?[carryFM]:[]),...sunS,...rings.map(q=>q.m)],vs=os.map(o=>o.visible);os.forEach(o=>o.visible=false);
  R.shadowMap.autoUpdate=false;scene.overrideMaterial=depthMat;R.setRenderTarget(rtD);R.setClearColor(0xffffff,1);R.clear(true,true,true);R.render(scene,cam);
  scene.overrideMaterial=null;R.setClearColor(0x000000,1);R.shadowMap.autoUpdate=true;os.forEach((o,i)=>o.visible=vs[i]);
  bright.uniforms.t.value=rtC.texture;pass(bright,rtB1);
@@ -352,7 +396,7 @@ let state='intro',stepD=0,paused=false,locked=false,fallback=false,dragging=fals
 const keys={},free=(x,z)=>obst.every(o=>Math.hypot(x-o.x,z-o.z)>o.r+.3);
 function show(id){document.querySelectorAll('.scr').forEach(e=>e.classList.toggle('show',e.id===id))}
 function toast(t){const e=$('toast');e.textContent=t;e.style.opacity=1;toastT=3.5}
-function newGame(){world=new World(Math.random()*1e9|0);buildBuried();buildRocks();sync();buildGrass();placeMower();dropCarry(true);parts.forEach(q=>scene.remove(q.m));parts.length=0;rings.forEach(q=>scene.remove(q.m));rings.length=0;geyser=false;px=0;pz=6;yaw=0;pitch=-.35;ey=world.hAt(0,6)+1.7;pc=0;elapsed=0;$('dg').textContent=0;$('tm').textContent='0:00';$('pr').textContent='Probe ready — press F or right-click'}
+function newGame(){world=new World(Math.random()*1e9|0);buildBuried();buildRocks();dropCarry(true);buildFinds();sync();buildGrass();placeMower();parts.forEach(q=>scene.remove(q.m));parts.length=0;rings.forEach(q=>scene.remove(q.m));rings.length=0;geyser=false;px=0;pz=6;yaw=0;pitch=-.35;ey=world.hAt(0,6)+1.7;pc=0;elapsed=0;$('dg').textContent=0;$('sc').textContent=0;$('tm').textContent='0:00';$('pr').textContent='Probe ready — press F or right-click'}
 function lock(){try{cv.requestPointerLock()}catch(e){}setTimeout(()=>{fallback=!document.pointerLockElement},250)}
 let seenHelp=false;try{seenHelp=localStorage.getItem('burstHelp')==='1'}catch(e){}
 function startPlay(){audio();state='play';newGame();$('hud').style.display='block';sh.visible=true;
@@ -360,33 +404,43 @@ function startPlay(){audio();state='play';newGame();$('hud').style.display='bloc
 $('bGot').onclick=()=>{seenHelp=true;try{localStorage.setItem('burstHelp','1')}catch(e){}paused=false;show(null);lock()};
 function toMenu(){state='menu';paused=false;geyser=false;document.exitPointerLock?.();$('hud').style.display='none';sh.visible=false;show('menu')}
 function tryDig(){if(state!=='play'||paused||!aim||cd>0||Math.abs(aim.x)>8.6||Math.abs(aim.z)>8.6||handsBusy())return;if(!isMown(aim.x,aim.z)){toast('Mow the grass first');return}cd=.8;swing=1;Net.send({type:'dig',x:aim.x,z:aim.z,by:ME})}
-/* E: drop what you're holding, else grab the mower if you're beside it, else grab the nearest exposed rock */
+/* E: drop what you're holding, else grab the mower, else the nearest exposed rock, else a find */
 function useE(){if(state!=='play'||paused)return;audio();
  if(mowerHeld){mowerHeld=false;return}
  if(carry>=0){if(aim)Net.send({type:'rock_place',n:carry,x:aim.x,z:aim.z,by:ME});else toast('Aim at the ground to put it down');return}
- if(Math.hypot(px-mower.position.x,pz-mower.position.z)<2.2){mowerHeld=true;mowerOn=true;return}
+ if(carryF>=0){const f=world.finds[carryF],db=Math.hypot(px-BIN[0],pz-BIN[1]),dc=Math.hypot(px-CRATE[0],pz-CRATE[1]);
+  if(db<2.5||dc<2.5){const at=db<=dc?'bin':'crate';if(at===(f.type==='trash'?'bin':'crate'))Net.send({type:'find_deposit',n:carryF,by:ME});else toast(f.type==='trash'?'That belongs in the trashcan':'That belongs in the crate');return}
+  if(aim)Net.send({type:'find_place',n:carryF,x:aim.x,z:aim.z,by:ME});else toast('Aim at the ground to put it down');return}
+ if(Math.hypot(px-mower.position.x,pz-mower.position.z)<2.2){mowerHeld=true;return}
  const dir=new V3(0,0,-1).applyQuaternion(cam.quaternion);let best=-1,bd=2.4;
  for(let n=0;n<RN;n++){const q=rk[n];if(q.held)continue;const h=world.hAt(q.x,q.z);if(q.y+q.s*.4<h)continue;/* still buried */
   const d=Math.hypot(q.x-px,q.z-pz);if(d>3.5||d>=bd)continue;if(new V3(q.x-px,q.y+q.s*.4-ey,q.z-pz).normalize().dot(dir)<.6)continue;best=n;bd=d}
- if(best<0)return;if(rk[best].s>.32){toast('Too heavy');return}Net.send({type:'rock_pick',n:best,by:ME})}
-function dropCarry(reset){if(carry<0)return;if(reset){rk[carry].held=0;setRock(carry);rocks.instanceMatrix.needsUpdate=true}carry=-1}
+ if(best>=0){if(rk[best].s>.32){toast('Too heavy');return}Net.send({type:'rock_pick',n:best,by:ME});return}
+ best=-1;bd=2.4;
+ for(let n=0;n<world.finds.length;n++){const f=world.finds[n];if(!findOut(f))continue;const d=Math.hypot(f.x-px,f.z-pz);if(d>3.5||d>=bd)continue;if(new V3(f.x-px,f.y-ey,f.z-pz).normalize().dot(dir)<.6)continue;best=n;bd=d}
+ if(best>=0)Net.send({type:'find_pick',n:best,by:ME})}
+function dropCarry(reset){if(carry>=0){if(reset){rk[carry].held=0;setRock(carry);rocks.instanceMatrix.needsUpdate=true}carry=-1}clearCarryF()}
 function probe(){if(state!=='play'||paused||pc>0)return;pc=2.5;nz('lowpass',140,.5,1);sweep('bandpass',200,1400,.6,.35,.05);const gy=world.hAt(px,pz);let bs,bd=1e9;
  for(const s of world.sig){const d=Math.hypot(px-s.x,gy-s.y,pz-s.z);if(d<bd){bd=d;bs=s}}
  if(bd>13){$('pr').textContent='Probe: no signal in range';return}
  const dp=(gy-bs.y)*(1+(Math.random()-.5)*.1),dn=bd*(1+(Math.random()-.5)*.14)+(Math.random()-.5)*.3;
  $('pr').textContent=`Probe: object ~${dn.toFixed(1)} m away · ~${dp.toFixed(1)} m deep`;addRing(px,pz,Math.sqrt(Math.max(.04,dn*dn-dp*dp)))}
 Net.on(a=>{
+ if(a.type==='find_pick'){const f=world.finds[a.n];if(!f||f.done)return;f.held=1;f.m.visible=false;if(a.by===ME){holdFind(a.n);toast(`${FIND[f.kind][2]} — ${f.type==='trash'?'take it to the trashcan':'take it to the crate'}`)}return}
+ if(a.type==='find_place'){const f=world.finds[a.n];f.held=0;f.out=1;f.x=a.x;f.z=a.z;f.y=world.hAt(a.x,a.z)+f.sz;syncFind(f);if(a.by===ME&&carryF===a.n)clearCarryF();return}
+ if(a.type==='find_deposit'){const f=world.finds[a.n];if(!f||f.done)return;f.done=1;f.held=0;f.m.visible=false;world.score+=f.pts;$('sc').textContent=world.score;if(a.by===ME){if(carryF===a.n)clearCarryF();toast(`+${f.pts}`);f.type==='trash'?clank():ping()}return}
  if(a.type==='rock_pick'){const q=rk[a.n];q.held=1;go.position.set(0,-50,0);go.scale.setScalar(0);go.updateMatrix();rocks.setMatrixAt(a.n,go.matrix);rocks.instanceMatrix.needsUpdate=true;
   if(a.by===ME){carry=a.n;carryM.scale.set(q.s*q.w,q.s,q.s*q.w);carryM.material.color.fromArray(rocks.instanceColor.array,a.n*3)}}
  if(a.type==='rock_place'){const q=rk[a.n];q.held=0;q.x=a.x;q.z=a.z;q.y=world.hAt(a.x,a.z)+q.s*.3;setRock(a.n);rocks.instanceMatrix.needsUpdate=true;if(a.by===ME&&carry===a.n)carry=-1;return}
- if(a.type!=='dig')return;world.apply(a);sync();clearGrass(a.x,a.z);settleRocks(a.x,a.z);$('dg').textContent=world.digs;const y=world.hAt(a.x,a.z);
+ if(a.type!=='dig')return;world.apply(a);sync();clearGrass(a.x,a.z);settleRocks(a.x,a.z);settleFinds(a.x,a.z);$('dg').textContent=world.digs;const y=world.hAt(a.x,a.z);
  for(let i=0;i<18;i++){const px2=a.x+(Math.random()-.5)*.6,pz2=a.z+(Math.random()-.5)*.6,q=digDepth(px2,pz2),dd=q.d-Math.random()*.2;
   spawn(new V3(px2,y+.1,pz2),new V3((Math.random()-.5)*3,2.5+Math.random()*3,(Math.random()-.5)*3),1.6,false,soilMat(dd<.05&&Math.random()<.4?-1:Math.max(0,dd),q.n))}
  if(a.by===ME)thud();if(state!=='play')return;
  for(const s of world.sig.slice(1))if(!s.f&&world.hAt(s.x,s.z)<s.y+s.top+.05){s.f=1;toast(`That's ${KIND[s.kind]} — not the leak. Keep probing.`);nz('lowpass',500,.4,.9);grain(6,.15,'bandpass',2500,6000,.25)}
  if(world.exposed())win()});
 function win(){state='won';geyser=true;nz('bandpass',1800,2.5,.7);sweep('lowpass',400,80,2.5,.6);
- const m=Math.floor(elapsed/60),s=Math.floor(elapsed%60);$('wt').textContent=`You exposed the burst main in ${world.digs} digs and ${m}:${String(s).padStart(2,'0')}. Water's off — the neighbours will never know.`;
+ const m=Math.floor(elapsed/60),s=Math.floor(elapsed%60),ft=world.finds.filter(f=>f.done&&f.type==='trash').length,fa=world.finds.filter(f=>f.done&&f.type==='artifact').length;
+ $('wt').textContent=`You exposed the burst main in ${world.digs} digs and ${m}:${String(s).padStart(2,'0')}. Water's off — the neighbours will never know. Finds: ${world.score} pts (${ft} trash, ${fa} artifacts).`;
  setTimeout(()=>{if(state==='won'){document.exitPointerLock?.();$('hud').style.display='none';show('win')}},2400)}
 
 /* ---------- input ---------- */
@@ -424,9 +478,10 @@ function play(dt){
  if(mowerOn){const mx=mower.position.x,mz=mower.position.z;if(mowX===undefined){mowX=mx;mowZ=mz}const steps=Math.max(1,Math.ceil(Math.hypot(mx-mowX,mz-mowZ)/.25));
  for(let s=1;s<=steps;s++)mowAt(mowX+(mx-mowX)*s/steps,mowZ+(mz-mowZ)*s/steps,.7);mowX=mx;mowZ=mz;mower.wheels.forEach(w=>w.rotation.x+=dt*18);
   if(Math.random()<.6)spawn(mower.position.clone().add(new V3((Math.random()-.5)*.6,.3,(Math.random()-.5)*.6)),new V3((Math.random()-.5)*1.2,1+Math.random(),(Math.random()-.5)*1.2),.6,false,soilMat(-1,0))}
- if(AC&&clipM)clipM.gain.setTargetAtTime(mowerOn&&state==='play'&&!paused?.09:0,AC.currentTime,.1);
+ if(AC&&clipM){const on=mowerOn&&state==='play'&&!paused;clipM.gain.gain.setTargetAtTime(on?.05:0,AC.currentTime,.15);clipM.blade.gain.setTargetAtTime(on?.012:0,AC.currentTime,.15)}
  /* carried rock sits in the hands */
  if(carry>=0){carryM.visible=true;carryM.position.set(.35,-.35,-.7);carryM.rotation.set(rk[carry].a,rk[carry].b+T*.4,rk[carry].c)}else carryM.visible=false;
+ if(carryFM){carryFM.position.set(.32,-.36,-.78);carryFM.rotation.set(.45,T*.6,.2)}
  $('sf').style.width=((1-pc/2.5)*100)+'%';
  const hd=Math.hypot(px-world.burst.x,world.hAt(px,pz)-world.burst.y,pz-world.burst.z);
  if(AC&&hissG)hissG.gain.setTargetAtTime(state==='play'&&!paused&&hd<3?Math.pow(1-hd/3,2)*.16:0,AC.currentTime,.15);

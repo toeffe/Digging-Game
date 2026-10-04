@@ -13,7 +13,7 @@ A first-person digging game in the browser (three.js r128, no build step). Somet
 | Left click, holding the mower | Start / stop the engine |
 | F / right-click | Ground probe |
 | W A S D, Shift | Walk, sprint |
-| E | Grab / drop the mower or a rock |
+| E | Grab / drop the mower, a rock, or a find (trash goes in the trashcan, artifacts in the crate) |
 | Esc | Pause menu (New yard is here) |
 
 ## Run locally
