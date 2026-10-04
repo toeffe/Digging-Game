@@ -19,7 +19,6 @@ A first-person digging game in the browser (three.js r128, no build step). Somet
 | G | Place a garden light where you aim (or pick up the one nearby) |
 | E at the wall socket | Switch the garden lights on / off |
 | E at a cut cable | Splice it (aim at the break). Shovels and a running mower cut cables |
-| Console `addPoints(n)` | Testing only (localhost or `?dev`): add n points |
 | L | Flashlight (needs the Flashlight upgrade) |
 | Esc | Pause menu (New yard is here) |
 
@@ -33,11 +32,13 @@ Pick Small (20 m), Medium (28 m) or Large (36 m) before starting; the choice is 
 
 ## Co-op (2-4 players)
 
-Menu > Co-op multiplayer > Host a game. Share the 5-letter room code (or the invite link from the pause menu). Everyone digs the same yard, shares the mower, the finds and the score. The host starts new yards; if the host leaves, the session ends. Connections are peer-to-peer (WebRTC via PeerJS); the public PeerJS broker is only used to introduce players, so strict networks may fail to connect.
+Menu > Co-op multiplayer. Set your name (up to 12 characters; it is remembered), then host a game or enter a code to join. Your name appears above your character. Leave it blank and you show up as Host or Player 2. Share the 5-letter room code, or the invite link from the pause menu. Everyone digs the same yard, shares the mower, the finds and the score. The host starts new yards; if the host leaves, the session ends. Connections are peer-to-peer (WebRTC via PeerJS); the public PeerJS broker is only used to introduce players, so strict networks may fail to connect.
 
 ## Run locally
 
 Serve the folder over HTTP, for example `python -m http.server`, then open `http://localhost:8000`.
+
+On localhost or with `?dev` in the URL, the console command `addPoints(n)` adds n points. There is no key for it.
 
 ## Files
 
