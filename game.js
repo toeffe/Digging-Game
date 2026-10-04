@@ -20,8 +20,11 @@ const UPG={shovel:{n:'Shovel',max:3,cost:[120,200,300],d:'Deeper, wider digs'},p
 const freshProg=()=>({bank:80,up:{shovel:0,probe:0,lantern:0,mower:0,boots:0,lamps:0}}),upCost=id=>{const l=Prog.up[id];return l<UPG[id].max?UPG[id].cost[l]:Infinity};
 let Prog=freshProg(),shopOpen=false,pcMax=2.5,flashOn=false;
 function saveProg(){}/* nothing is kept between yards any more; hook left in place for the callers */
-function renderShop(){$('shopList').innerHTML=UKEY.map((id,i)=>{const u=UPG[id],l=Prog.up[id],mx=l>=u.max,c=upCost(id);return`<li class="${mx?'mx':c>Prog.bank?'no':''}"><b>${i+1}</b> ${u.n} <i>Lv ${l}/${u.max}</i><span>${mx?'MAX':c}</span><small>${u.d}</small></li>`}).join('');$('shopBank').textContent=Prog.bank}
-function setShop(v){shopOpen=v;$('shop').style.display=v?'block':'none';if(v)renderShop()}
+function renderShop(){$('shopList').innerHTML=UKEY.map(id=>{const u=UPG[id],l=Prog.up[id],mx=l>=u.max,c=upCost(id);return`<li data-id="${id}" class="${mx?'mx':c>Prog.bank?'no':''}">${u.n} <i>Lv ${l}/${u.max}</i><span>${mx?'MAX':c}</span><small>${u.d}</small></li>`}).join('');$('shopBank').textContent=Prog.bank}
+function setShop(v){const was=shopOpen;shopOpen=v;$('shop').style.display=v?'block':'none';$('cross').style.visibility=v?'hidden':'visible';
+ if(v){renderShop();if(document.pointerLockElement===cv)document.exitPointerLock()}
+ else if(was&&state==='play'&&!paused&&!fallback)lock()}
+$('shopList').addEventListener('click',e=>{const li=e.target.closest('li');if(!li||!shopOpen)return;const id=li.dataset.id,c=upCost(id);if(c===Infinity)toast(`${UPG[id].n} is maxed out`);else if(c>Prog.bank)toast(`Need ${c} points for ${UPG[id].n}`);else Net.send({type:'buy',id,by:ME})});
 /* testing helper: in the console, addPoints(n) adds n points. Only on localhost / file:// or with ?dev in the URL */
 const DEV=/^(localhost|127\.0\.0\.1|\[::1\]|)$/.test(location.hostname)||/[?&]dev\b/.test(location.search);
 function hudPts(){$('sc').textContent=Prog.bank;if(shopOpen)renderShop();hbShow()}
@@ -88,14 +91,19 @@ const flash=new THREE.SpotLight(lin(0xfff0d0),0,16,.45,.7,1.2),flashT=new THREE.
 function resize(){const pr=Math.min(devicePixelRatio,1.5),w=Math.round(innerWidth*pr),h=Math.round(innerHeight*pr);R.setSize(w,h,false);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();if(window.fxResize)fxResize(w,h)}addEventListener('resize',resize);resize();
 const hemi=new THREE.HemisphereLight(lin(0xbcd6ff),lin(0x5a4630),.7);scene.add(hemi);
 const sun=new THREE.DirectionalLight(lin(0xfff1d6),1.8);sun.position.set(-16,9,-6);sun.castShadow=true;sun.shadow.mapSize.set(3072,3072);
-const sc=sun.shadow.camera;sc.left=sc.bottom=-16;sc.right=sc.top=16;sc.far=50;sun.shadow.bias=-.0004;sun.shadow.normalBias=.05;scene.add(sun);let skyMat;
+const sc=sun.shadow.camera;sc.left=sc.bottom=-16;sc.right=sc.top=16;sc.far=50;sun.shadow.bias=-.0004;sun.shadow.normalBias=.05;scene.add(sun);let skyMat,overMat;
 function cvTex(w,h,fn,rx=1,ry=1){const c=document.createElement('canvas');c.width=w;c.height=h;fn(c.getContext('2d'),w,h);const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(rx,ry);t.encoding=THREE.sRGBEncoding;t.anisotropy=8;return t}
 {/* sky dome with soft clouds */
  const t=cvTex(1024,512,(x,w,h)=>{const g=x.createLinearGradient(0,0,0,h);g.addColorStop(0,'#2f6bc0');g.addColorStop(.45,'#86b6e6');g.addColorStop(.5,'#d3e4ee');g.addColorStop(1,'#d9e6e0');x.fillStyle=g;x.fillRect(0,0,w,h);x.filter='blur(7px)';
   /* each puff is drawn at -w, 0 and +w so clouds wrap around the left/right texture edge (no visible seam) */
   for(let i=0;i<45;i++){const px=Math.random()*w,py=110+Math.random()*120;for(let k=0;k<7;k++){const ey=py+Math.random()*12,rx=40+Math.random()*34,ry=10+Math.random()*9;x.fillStyle='rgba(255,255,255,.2)';for(const o of[-w,0,w]){x.beginPath();x.ellipse(px+k*26-78+o,ey,rx,ry,0,0,6.3);x.fill()}}}});
  t.generateMipmaps=false;t.minFilter=THREE.LinearFilter;t.anisotropy=1;/* no mip selection across the u=0/1 wrap, which draws a thin line */
- skyMat=new THREE.MeshBasicMaterial({map:t,side:THREE.BackSide,fog:false,toneMapped:false,depthWrite:false});scene.add(new THREE.Mesh(new THREE.SphereGeometry(200,32,16),skyMat))}
+ skyMat=new THREE.MeshBasicMaterial({map:t,side:THREE.BackSide,fog:false,toneMapped:false,depthWrite:false});scene.add(new THREE.Mesh(new THREE.SphereGeometry(200,32,16),skyMat));
+ const ot=cvTex(1024,512,(x,w,h)=>{const g=x.createLinearGradient(0,0,0,h);g.addColorStop(0,'#2c3540');g.addColorStop(.4,'#5c6772');g.addColorStop(.58,'#8a929a');g.addColorStop(1,'#b7c0c6');x.fillStyle=g;x.fillRect(0,0,w,h);x.filter='blur(6px)';
+  for(let i=0;i<70;i++){const px=Math.random()*w,py=30+Math.random()*h*.62,rx=70+Math.random()*140,ry=16+Math.random()*28;x.fillStyle=`rgba(28,34,42,${.18+Math.random()*.28})`;for(const o of[-w,0,w]){x.beginPath();x.ellipse(px+o,py,rx,ry,0,0,6.3);x.fill()}}});
+ ot.generateMipmaps=false;ot.minFilter=THREE.LinearFilter;ot.anisotropy=1;
+ overMat=new THREE.MeshBasicMaterial({map:ot,side:THREE.BackSide,fog:false,toneMapped:false,transparent:true,opacity:0,depthWrite:false});
+ const over=new THREE.Mesh(new THREE.SphereGeometry(196,32,16),overMat);over.renderOrder=1;scene.add(over)}
 
 /* ---------- materials & scenery ---------- */
 const mat=(c,o={})=>new THREE.MeshStandardMaterial(Object.assign({color:lin(c),roughness:.9,metalness:0},o)),obst=[],GLASS=[],LAMPS=[];/* window glass + street-lamp bulb materials, driven by applyDay */
@@ -491,10 +499,10 @@ function stepParts(dt){for(let i=parts.length-1;i>=0;i--){const q=parts[i],P=q.m
  const g=world.floorAt(P.x,P.z,P.y);if(P.y<g&&!q.w){P.y=g;q.v.set(0,0,0)}if(q.life<=0||(q.w&&P.y<g)){scene.remove(q.m);parts.splice(i,1)}}}
 
 /* ---------- audio (synthesized) ---------- */
-let AC,NB,hissG;
+let AC,NB,hissG,rainSnd;
 function audio(){if(AC){AC.resume();return}AC=new(window.AudioContext||window.webkitAudioContext)();NB=AC.createBuffer(1,AC.sampleRate*2,AC.sampleRate);const d=NB.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
  const lp=(type,fq,g)=>{const s=AC.createBufferSource();s.buffer=NB;s.loop=true;const f=AC.createBiquadFilter();f.type=type;f.frequency.value=fq;const o=AC.createGain();o.gain.value=g;s.connect(f);f.connect(o);o.connect(AC.destination);s.start();return o};
- lp('lowpass',350,.06);hissG=lp('bandpass',3200,0);
+ lp('lowpass',350,.06);hissG=lp('bandpass',3200,0);rainSnd=lp('highpass',1500,0);
  /* mower: a droning single-cylinder engine (two slightly detuned saws) plus a quiet blade whir */
  const mo=AC.createOscillator(),mo2=AC.createOscillator(),mb=AC.createOscillator();mo.type=mo2.type='sawtooth';mb.type='triangle';mo.frequency.value=62;mo2.frequency.value=63.5;mb.frequency.value=190;
  const mf=AC.createBiquadFilter();mf.type='lowpass';mf.frequency.value=420;mf.Q.value=.7;const mg=AC.createGain();mg.gain.value=0;const mbg=AC.createGain();mbg.gain.value=0;
@@ -558,22 +566,45 @@ const moon=(()=>{const t=cvTex(128,128,x=>{const g=x.createRadialGradient(64,64,
 /* lights exist from the start and only change intensity: adding/removing a light recompiles every material in three r128 */
 const porchL=new THREE.PointLight(lin(0xffc880),0,12,1.5),benchL=new THREE.PointLight(lin(0xffc880),0,11,1.5);
 porchL.position.set(1.4,2,-9.2);benchL.position.set(BENCH[0]+.7,2.1,BENCH[1]+.5);scene.add(porchL,benchL);
+let cloudAmt=0,rainAmt=0,wasBolt=false,weatherHold=null;/* weather follows the shared day clock, unless setWeather holds it */
 function applyDay(){
  const a=(dayT-.25)*6.2832,cs=Math.cos(a),sn=Math.sin(a);sdir.set(cs*.93,sn*.9+.35,cs*.37-sn*.2).normalize();/* bias .35 keeps the sun up for ~63% of the day */
  const ny=sdir.y,df=sstep(-.1,.3,ny),warm=sstep(.5,.05,ny)*df;dayF=df;nightF=1-df;sunVis=sstep(-.08,.05,ny);
+ {const u=((dayT*DAY_LEN)%180)/180;cloudAmt=sstep(.36,.5,u)*sstep(1,.8,u);rainAmt=sstep(.52,.64,u)*sstep(.96,.78,u)
+  if(weatherHold==='clear'){cloudAmt=0;rainAmt=0}else if(weatherHold==='cloud'){cloudAmt=1;rainAmt=0}else if(weatherHold==='rain'){cloudAmt=1;rainAmt=1}}/* about 3 minutes: clear, cloud, rain, clear */
  /* a single directional light: the sun by day, a dim blue moon by night; the swap happens while both are ~0 so nothing pops */
  sun.position.copy(ny>=0?sdir:_v.copy(sdir).negate()).multiplyScalar(19.2);
- sun.intensity=ny>=0?1.8*sstep(0,.3,ny):.34*sstep(0,.3,-ny);sun.color.copy(ny>=0?CL.sun:CL.moon);if(ny>=0)sun.color.lerp(CL.warm,warm);
- hemi.color.copy(CL.hsN).lerp(CL.hs,df);hemi.groundColor.copy(CL.hgN).lerp(CL.hg,df);hemi.intensity=.22+.48*df;
- scene.fog.color.copy(CL.fogN).lerp(CL.fog,df).lerp(CL.fogW,warm*.4);
- skyMat.color.setRGB(.025,.04,.1).lerp(_c.setRGB(1,1,1),df).lerp(_c.setRGB(1,.72,.56),warm*.55);
- stars.material.opacity=nightF*nightF;stars.visible=nightF>.02;stars.rotation.y=dayT*6.2832;
- const mv=sstep(.02,-.2,ny);moon.material.opacity=mv;moon.visible=mv>.01;sunS.forEach(q=>q.material.opacity=sunVis);
+ /* cloud flattens the sun into gray fill; rain nearly removes it, so shadows go soft then almost vanish */
+ const sunK=1-.75*cloudAmt-.19*rainAmt,fillK=1+.2*cloudAmt-.62*rainAmt;
+ sun.intensity=(ny>=0?1.8*sstep(0,.3,ny):.34*sstep(0,.3,-ny))*Math.max(.06,sunK);
+ sun.color.copy(ny>=0?CL.sun:CL.moon);if(ny>=0){sun.color.lerp(CL.warm,warm*(1-cloudAmt));sun.color.lerp(_c.setRGB(.72,.78,.84),cloudAmt)}
+ const bolt=rainAmt>.55&&((dayT*DAY_LEN)%47)<.18;
+ hemi.color.copy(CL.hsN).lerp(CL.hs,df);hemi.color.lerp(_c.setRGB(.62,.67,.72),cloudAmt*df);hemi.color.lerp(_c.setRGB(.32,.38,.46),rainAmt*Math.max(df,.4));
+ hemi.groundColor.copy(CL.hgN).lerp(CL.hg,df);hemi.groundColor.lerp(_c.setRGB(.18,.2,.22),Math.max(cloudAmt,rainAmt)*.65);
+ hemi.intensity=(.22+.48*df)*Math.max(.35,fillK)+(bolt?1.6:0);
+ if(bolt&&!wasBolt){nz('lowpass',60,.9,.4);nz('lowpass',160,.3,.18)}wasBolt=bolt;
+ scene.fog.color.copy(CL.fogN).lerp(CL.fog,df).lerp(CL.fogW,warm*.4*(1-cloudAmt));scene.fog.color.lerp(_c.setRGB(.5,.56,.62),cloudAmt*.8);
+ scene.fog.near=35-18*rainAmt;scene.fog.far=150-85*rainAmt;
+ skyMat.color.setRGB(.025,.04,.1).lerp(_c.setRGB(1,1,1),df).lerp(_c.setRGB(1,.72,.56),warm*.55*(1-cloudAmt));
+ overMat.opacity=cloudAmt;overMat.color.setRGB(.02,.025,.04).lerp(_c.setRGB(.62,.68,.74),df*(1-.3*rainAmt));
+ stars.material.opacity=nightF*nightF*(1-cloudAmt);stars.visible=nightF>.02;stars.rotation.y=dayT*6.2832;
+ const mv=sstep(.02,-.2,ny);moon.material.opacity=mv*(1-cloudAmt*.85);moon.visible=mv>.01;sunS.forEach(q=>q.material.opacity=sunVis*(1-cloudAmt));
  comp.uniforms.uN.value=nightF;
  /* night lights: porch + workbench lamp, windows that switch on one by one, street bulbs */
  porchL.intensity=1.3*nightF;benchL.intensity=1.6*nightF;
  for(const m of GLASS)m.emissiveIntensity=sstep(m.userData.th,m.userData.th+.25,nightF)*1.1;
  for(const m of LAMPS)m.color.setRGB(3.2,2.6,1.5).multiplyScalar(.12+.88*nightF)}
+const RDN=640,rainP=new Float32Array(RDN*6),rainSp=new Float32Array(RDN),rainGeo=new THREE.BufferGeometry();
+rainGeo.setAttribute('position',new THREE.BufferAttribute(rainP,3));
+const rainMat=new THREE.LineBasicMaterial({color:0xc5d4e0,transparent:true,opacity:0,depthWrite:false,fog:true}),rainLines=new THREE.LineSegments(rainGeo,rainMat);
+rainLines.frustumCulled=false;scene.add(rainLines);
+function rainDrop(i,y){const o=cam.position,a=Math.random()*6.283,r=Math.sqrt(Math.random())*16,x=o.x+Math.cos(a)*r,z=o.z+Math.sin(a)*r,yy=y!=null?y:o.y+2+Math.random()*14,k=i*6;
+ rainP[k]=x;rainP[k+1]=yy;rainP[k+2]=z;rainP[k+3]=x+.16;rainP[k+4]=yy-.72;rainP[k+5]=z+.04;rainSp[i]=12+Math.random()*14}
+for(let i=0;i<RDN;i++)rainDrop(i);
+function stepRain(dt){rainMat.opacity=rainAmt*.55;rainLines.visible=rainAmt>.06;if(rainAmt<.06)return;const o=cam.position;
+ for(let i=0;i<RDN;i++){const k=i*6,sp=rainSp[i]*dt;rainP[k+1]-=sp;rainP[k+4]-=sp;rainP[k]+=dt*2.6;rainP[k+3]+=dt*2.6;
+  if(rainP[k+1]<o.y-7||Math.hypot(rainP[k]-o.x,rainP[k+2]-o.z)>18)rainDrop(i,o.y+4+Math.random()*12)}
+ rainGeo.attributes.position.needsUpdate=true}
 /* ---------- garden lights: bought at the workbench (Prog.up.lamps = how many you own), set on the ground (G) and wired to the wall socket ---------- */
 const SOCK0=[5.9,-9.9],SOCK=[5.9,-9.9],CABLE_MAX=50,GL_R=7,GLN=4;/* socket on the house front wall (below the right shutter); cable reach and lit radius in m; max lamps */
 let glOn=false,glK=0,glDirty=false;const GS=Array(GLN).fill(null);/* placed lamps: {x,z} or null */
@@ -632,7 +663,7 @@ function fxRender(){
  bright.uniforms.t.value=rtC.texture;pass(bright,rtB1);
  for(const k of[1.5,3]){blur.uniforms.t.value=rtB1.texture;blur.uniforms.d.value.set(k/rtB1.width,0);pass(blur,rtB2);blur.uniforms.t.value=rtB2.texture;blur.uniforms.d.value.set(0,k/rtB1.height);pass(blur,rtB1)}
  const u=comp.uniforms;sv.copy(cam.position).addScaledVector(sdir,100).project(cam);u.sun.value.set(sv.x*.5+.5,sv.y*.5+.5);
- u.sI.value=Math.max(0,new V3(0,0,-1).applyQuaternion(cam.quaternion).dot(sdir)+.2)*sunVis;u.tC.value=rtC.texture;u.tD.value=rtD.texture;u.tB.value=rtB1.texture;u.tm.value=performance.now()/1000%100;
+ u.sI.value=Math.max(0,new V3(0,0,-1).applyQuaternion(cam.quaternion).dot(sdir)+.2)*sunVis*(1-cloudAmt);u.tC.value=rtC.texture;u.tD.value=rtD.texture;u.tB.value=rtB1.texture;u.tm.value=performance.now()/1000%100;
  pass(comp,null)}
 resize();
 
@@ -677,6 +708,7 @@ function useE(){if(state!=='play'||paused)return;audio();
   if(db<2.5||dc<2.5){const at=db<=dc?'bin':'crate';if(at===(f.type==='trash'?'bin':'crate'))Net.send({type:'find_deposit',n:carryF,by:ME});else toast(f.type==='trash'?'That belongs in the trashcan':'That belongs in the crate');return}
   if(aim)Net.send({type:'find_place',n:carryF,x:aim.x,z:aim.z,by:ME});else toast('Aim at the ground to put it down');return}
  if(aim){let bi=-1,bd=1.6;GS.forEach((q,i)=>{if(!q||q.cut==null)return;const p=cutPos(i),d=Math.hypot(p[0]-aim.x,p[1]-aim.z);if(d<bd&&Math.hypot(p[0]-px,p[1]-pz)<3.5){bd=d;bi=i}});if(bi>=0){Net.send({type:'cable_fix',i:bi,by:ME});return}}
+ if(lookingAtLeak()){Net.send({type:'shutoff',by:ME});return}
  if(Math.hypot(px-SOCK[0],pz-SOCK[1])<2.6){if(!Prog.up.lamps)toast('No lights yet — buy some at the workbench');else Net.send({type:'lamp_power',on:glOn?0:1,by:ME});return}
  if(Math.hypot(px-BENCH[0],pz-BENCH[1])<3.2){setShop(true);return}
  if(Math.hypot(px-mower.position.x,pz-mower.position.z)<2.2){if(mowerOwner)toast('Someone else is using the mower');else Net.send({type:'mower_grab',by:ME});return}
@@ -688,6 +720,8 @@ function useE(){if(state!=='play'||paused)return;audio();
  best=-1;bd=2.4;
  for(let n=0;n<world.finds.length;n++){const f=world.finds[n];if(!findOut(f))continue;const d=Math.hypot(f.x-px,f.z-pz);if(d>3.5||d>=bd)continue;if(new V3(f.x-px,f.y-ey,f.z-pz).normalize().dot(dir)<.6)continue;best=n;bd=d}
  if(best>=0)Net.send({type:'find_pick',n:best,by:ME})}
+function lookingAtLeak(){if(!world||world.shut||!world.exposed())return false;const b=world.burst,o=cam.position,dx=b.x-o.x,dy=b.y-o.y,dz=b.z-o.z,t=dx*digDir.x+dy*digDir.y+dz*digDir.z;
+ if(t<.25||t>4.5||Math.hypot(dx-digDir.x*t,dy-digDir.y*t,dz-digDir.z*t)>.6)return false;return Math.hypot(px-b.x,py-b.y,pz-b.z)<4.2}
 function dropCarry(reset){if(carry>=0){if(reset){rk[carry].held=0;setRock(carry);rocks.instanceMatrix.needsUpdate=true}carry=-1}clearCarryF()}
 function probe(){if(state!=='play'||paused||pc>0)return;const pl=Prog.up.probe,nf=1-.3*pl;pcMax=pc=PCD[pl];pa=1;nz('lowpass',140,.5,1);sweep('bandpass',200,1400,.6,.35,.05);const gy=world.hAt(px,pz);let bs,bd=1e9;
  for(const s of world.sig){const d=Math.hypot(px-s.x,gy-s.y,pz-s.z);if(d<bd){bd=d;bs=s}}
@@ -702,6 +736,7 @@ Net.on(a=>{
   if(a.by===ME){carry=a.n;carryM.scale.set(q.s*q.w,q.s,q.s*q.w);carryM.material.color.fromArray(rocks.instanceColor.array,a.n*3);toast(q.gem?`${GEM[q.gem][0]}! ${GEM[q.gem][1]} pts at the crate`:`Plain rock — ${ROCK_PTS} pt at the crate or the trashcan`)}}
  if(a.type==='rock_sell'){const q=rk[a.n];if(!q||q.held==='$')return;const pts=q.gem?GEM[q.gem][1]:ROCK_PTS;q.held='$';go.position.set(0,-50,0);go.scale.setScalar(0);go.updateMatrix();rocks.setMatrixAt(a.n,go.matrix);rocks.instanceMatrix.needsUpdate=true;world.score+=pts;Prog.bank+=pts;hudPts();saveProg();if(a.by===ME){if(carry===a.n)carry=-1;toast(q.gem?`${GEM[q.gem][0]} sold  +${pts}`:`Plain rock  +${pts}`);q.gem?ping():clank()}return}
  if(a.type==='scrap'){const s=world.sig[a.n];if(!s||s.kind==='burst'||!s.f||s.sold)return;s.sold=1;if(s.ms)s.ms.forEach(m=>m.visible=false);const pts=SCRAP[s.kind]||2;world.score+=pts;Prog.bank+=pts;hudPts();saveProg();if(a.by===ME){toast(`Scrapped  +${pts}`);clank()}return}
+ if(a.type==='shutoff'){if(!world.exposed()||world.shut)return;world.shut=1;win();return}
  if(a.type==='rock_place'){const q=rk[a.n];q.held=0;q.x=a.x;q.z=a.z;q.y=world.floorAt(a.x,a.z,1)+q.s*.3;setRock(a.n);rocks.instanceMatrix.needsUpdate=true;if(a.by===ME&&carry===a.n)carry=-1;return}
  if(a.type==='buy'){const u=UPG[a.id],c=upCost(a.id);Prog.bank-=c;Prog.up[a.id]++;hudPts();saveProg();
   if(a.by===ME){ping();toast(`${u.n} upgraded to level ${Prog.up[a.id]}`)}else toast(`Team bought ${u.n} level ${Prog.up[a.id]}`);return}
@@ -722,10 +757,10 @@ Net.on(a=>{
   spawn(new V3(px2,y+.1,pz2),new V3((Math.random()-.5)*3,2.5+Math.random()*3,(Math.random()-.5)*3),1.6,false,soilMat(dd<.05&&Math.random()<.4?-1:Math.max(0,dd),q.n))}
  if(a.by===ME)thud();if(state!=='play')return;
  for(const s of world.sig.slice(1))if(!s.f&&!world.solidAt(s.x,s.y,s.z)){s.f=1;toast(`That's ${KIND[s.kind]} — not the leak. Press E to scrap it for ${SCRAP[s.kind]} pts.`);nz('lowpass',500,.4,.9);grain(6,.15,'bandpass',2500,6000,.25)}
- if(world.exposed()){if(Net.mode==='solo')win();else if(Net.mode==='host')Net.send({type:'win'})}});/* co-op: only the host calls it, so everyone wins together */
+ if(world.exposed()&&!world.seenLeak){world.seenLeak=1;toast('The main is open. Aim at the leak and press E to shut the water off.')}});/* the round keeps going until someone shuts it off */
 function win(){state='won';geyser=true;nz('bandpass',1800,2.5,.7);sweep('lowpass',400,80,2.5,.6);
  const m=Math.floor(elapsed/60),s=Math.floor(elapsed%60),ft=world.finds.filter(f=>f.done&&f.type==='trash').length,fa=world.finds.filter(f=>f.done&&f.type==='artifact').length;
- $('wt').textContent=`You exposed the burst main in ${world.digs} digs and ${m}:${String(s).padStart(2,'0')}. Water's off — the neighbours will never know. Finds: ${world.score} pts (${ft} trash, ${fa} artifacts).`;
+ $('wt').textContent=`You shut off the burst main in ${world.digs} digs and ${m}:${String(s).padStart(2,'0')}. Water's off — the neighbours will never know. Finds: ${world.score} pts (${ft} trash, ${fa} artifacts).`;
  setTimeout(()=>{if(state==='won'){document.exitPointerLock?.();$('hud').style.display='none';show('win')}},2400)}
 
 /* ---------- input ---------- */
@@ -736,24 +771,28 @@ addEventListener('wheel',e=>{if(state!=='play'||paused||shopOpen)return;const d=
 addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='Space'&&state==='play')e.preventDefault();if(state==='intro'){state='menu';audio();show(menuScr());return}if(e.code==='KeyF')probe();if(e.code==='KeyE'&&!e.repeat)useE();
  if(state!=='play'||paused||e.repeat)return;
  if(e.code==='KeyL')flashKey();
+ if(e.code==='Escape'&&shopOpen){setShop(false);return}
  if(!shopOpen&&/^(Digit|Numpad)[1-4]$/.test(e.code))hbSelect(+e.code.slice(-1)-1);
- if(e.code==='KeyG'&&state==='play'&&!paused)lampKey();
- if(shopOpen&&/^(Digit|Numpad)[1-6]$/.test(e.code)){const id=UKEY[+e.code.slice(-1)-1],c=upCost(id);if(c===Infinity)toast(`${UPG[id].n} is maxed out`);else if(c>Prog.bank)toast(`Need ${c} points for ${UPG[id].n}`);else Net.send({type:'buy',id,by:ME})}});
+ if(e.code==='KeyG'&&state==='play'&&!paused)lampKey()});
 addEventListener('keyup',e=>keys[e.code]=false);addEventListener('contextmenu',e=>e.preventDefault());
 $('intro').addEventListener('click',()=>{if(state==='intro'){state='menu';audio();show(menuScr())}});
 addEventListener('mousemove',e=>{if(state==='intro'||paused)return;if(locked||(fallback&&dragging)){yaw-=e.movementX*.0022;pitch=Math.max(-1.45,Math.min(1.45,pitch-e.movementY*.0022));moved+=Math.abs(e.movementX)+Math.abs(e.movementY)}});
-addEventListener('mousedown',e=>{if(e.target.closest('button')||state!=='play'||paused)return;if(e.button===2){probe();return}if(e.button!==0)return;if(mowerHeld){mowerOn=!mowerOn;return}holding=sel===0;heldT=0;autoDug=false;if(locked)useItem();else if(fallback){dragging=true;moved=0}});
+addEventListener('mousedown',e=>{if(e.target.closest('button,#shop')||state!=='play'||paused)return;if(e.button===2){probe();return}if(e.button!==0)return;if(mowerHeld){mowerOn=!mowerOn;return}holding=sel===0;heldT=0;autoDug=false;if(locked)useItem();else if(fallback){dragging=true;moved=0}});
 addEventListener('mouseup',e=>{if(e.button!==0)return;if(dragging&&moved<6&&!autoDug)useItem();dragging=false;holding=false});
 addEventListener('blur',()=>{holding=dragging=false});
-document.addEventListener('pointerlockchange',()=>{locked=document.pointerLockElement===cv;if(!locked&&state==='play'&&!fallback){holding=false;paused=true;setShop(false);show('pause')}});
-/* yard-size selector (menu, co-op lobby, pause, win): one shared choice, remembered */
+document.addEventListener('pointerlockchange',()=>{locked=document.pointerLockElement===cv;if(!locked&&state==='play'&&!fallback&&!shopOpen){holding=false;paused=true;setShop(false);show('pause')}});
+/* yard-size selector (menu, co-op lobby, win): one shared choice, remembered */
 window.addPoints=n=>Net.send({type:'bank_add',n:n|0,by:ME});/* console only; the host accepts it on localhost or with ?dev */
+window.setWeather=name=>{if(!DEV){console.warn('setWeather only works on localhost or with ?dev');return}const n=String(name||'auto').toLowerCase();
+ if(n==='auto'||n==='cycle'){weatherHold=null;console.log('weather: auto');return}
+ if(n==='clear'||n==='cloud'||n==='cloudy'||n==='rain'){weatherHold=n==='cloudy'?'cloud':n;console.log('weather: '+weatherHold);return}
+ console.log('setWeather("clear" | "cloud" | "rain" | "auto")')};
 const szBtns=[...document.querySelectorAll('.szsel button')],szShow=()=>szBtns.forEach(b=>b.classList.toggle('on',+b.dataset.s===wantSize));
 szBtns.forEach(b=>b.onclick=()=>{wantSize=+b.dataset.s;try{localStorage.setItem('burstSize',wantSize)}catch(e){}szShow();
  if((state==='menu'||state==='intro')&&Net.mode==='solo'&&wantSize!==S)newGame(undefined,wantSize)/* the yard behind the menu follows the choice */});szShow();
 $('bSolo').onclick=()=>startPlay();$('bHow').onclick=()=>{$('how').hidden=!$('how').hidden};
 $('bRes').onclick=()=>{paused=false;show(null);lock()};
-for(const id of['bNew2','bNew3'])$(id).onclick=()=>{if(Net.mode==='client')return;
+$('bNew3').onclick=()=>{if(Net.mode==='client')return;
  if(Net.mode==='host'){paused=false;show(null);Net.send({type:'new_yard',seed:rndSeed(),size:wantSize});if(!fallback)lock();return}
  if(state==='play'){paused=false;show(null);newGame(undefined,wantSize);if(!fallback)lock()}else startPlay()};
 for(const id of['bMenu','bMenu2','bMenu3'])$(id).onclick=toMenu;
@@ -793,8 +832,12 @@ function play(dt){
  if(Net.mode!=='solo'||!paused)dayT=(dayT+dt/DAY_LEN)%1;/* co-op keeps running while one player is paused */
  const fl=Prog.up.lantern;flash.intensity+=((flashOn&&fl?2.6+1.1*(fl-1):0)-flash.intensity)*Math.min(1,dt*12);flash.angle=fl>1?.6:.45;flash.distance=fl>1?22:16;
  const nb=Math.hypot(px-BENCH[0],pz-BENCH[1]);if(shopOpen&&nb>3.8)setShop(false);
- const ns=Math.hypot(px-SOCK[0],pz-SOCK[1]),hn=ns<2.6?`Press E — lights ${glOn?'off':'on'}`:'Press E — workbench';if($('hint').textContent!==hn)$('hint').textContent=hn;
- $('hint').style.display=!shopOpen&&(nb<3.2||ns<2.6)&&!handsBusy()&&state==='play'&&!paused?'block':'none';lampTick(dt);
+ const ns=Math.hypot(px-SOCK[0],pz-SOCK[1]);let hn='';
+ if(lookingAtLeak()&&!handsBusy())hn='Press E — shut off the leak';
+ else if(ns<2.6)hn=`Press E — lights ${glOn?'off':'on'}`;
+ else if(nb<3.2)hn='Press E — workbench';
+ if($('hint').textContent!==hn)$('hint').textContent=hn;
+ $('hint').style.display=hn&&!shopOpen&&state==='play'&&!paused?'block':'none';lampTick(dt);
  pc=Math.max(0,pc-dt);swing=Math.max(0,swing-dt*1.5);const sw=Math.sin((1-swing)*Math.PI)*(swing>0?1:0);
  if(sel!==want){swapK=Math.min(1,swapK+dt*7);if(swapK>=1)sel=want}else swapK=Math.max(0,swapK-dt*7);
  const empty=!handsBusy(),swo=swapK*.6,bob=Math.sin(T*1.7)*.004;pa=Math.max(0,pa-dt*1.5);
@@ -822,7 +865,8 @@ function play(dt){
  $('cdf').style.height=(pc>0?pc/pcMax*100:0)+'%';
  const hd=Math.hypot(px-world.burst.x,world.hAt(px,pz)-world.burst.y,pz-world.burst.z);
  if(AC&&hissG)hissG.gain.setTargetAtTime(state==='play'&&!paused&&hd<3?Math.pow(1-hd/3,2)*.16:0,AC.currentTime,.15);
- hudT-=dt;if(hudT<=0){hudT=.25;$('tm').textContent=Math.floor(elapsed/60)+':'+String(Math.floor(elapsed%60)).padStart(2,'0');const hh=dayT*24;$('cl').textContent=String(Math.floor(hh)).padStart(2,'0')+':'+String(Math.floor(hh%1*60)).padStart(2,'0')+(dayF<.45?' ☾':' ☀')}
+ if(AC&&rainSnd)rainSnd.gain.setTargetAtTime(rainAmt*(ey<-1?.015:.06)*(state==='play'&&!paused?1:.3),AC.currentTime,.4);
+ hudT-=dt;if(hudT<=0){hudT=.25;$('tm').textContent=Math.floor(elapsed/60)+':'+String(Math.floor(elapsed%60)).padStart(2,'0');const hh=dayT*24;$('cl').textContent=String(Math.floor(hh)).padStart(2,'0')+':'+String(Math.floor(hh%1*60)).padStart(2,'0')+(dayF<.45?' ☾':' ☀')+(rainAmt>.4?' rain':cloudAmt>.5?' cloudy':'')}
  if(toastT>0&&(toastT-=dt)<=0)$('toast').style.opacity=0;
 }
 function loop(now){requestAnimationFrame(loop);const dt=Math.min(.05,(now-last)/1000);last=now;T+=dt;
@@ -830,5 +874,5 @@ function loop(now){requestAnimationFrame(loop);const dt=Math.min(.05,(now-last)/
  else{const a=Math.sin(T*.12)*.9;cam.position.set(Math.sin(a)*(YH+7),6.5+DEL*.5,Math.cos(a)*(YH+7));cam.lookAt(0,0,0)}
  for(let i=rings.length-1;i>=0;i--){const q=rings[i];q.t=Math.min(1,q.t+dt/.9);q.age=(q.age||0)+dt;q.m.scale.setScalar(Math.max(.01,q.r*(1-Math.pow(1-q.t,3))));q.m.material.opacity=Math.max(0,Math.min(1,(12-q.age)/4))*.6;if(q.age>12){scene.remove(q.m);rings.splice(i,1)}}
  if(geyser)for(let k=0;k<4;k++)spawn(new V3(world.burst.x,world.burst.y+.15,world.burst.z),new V3((Math.random()-.5)*1.4,5+Math.random()*3,(Math.random()-.5)*1.4),1.5,true);
- if(world)stepParts(dt);GU.uT.value=T;applyDay();fxRender()}
+ if(world)stepParts(dt);GU.uT.value=T;applyDay();stepRain(dt);fxRender()}
 newGame();requestAnimationFrame(loop);

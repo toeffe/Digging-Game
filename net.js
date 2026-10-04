@@ -65,6 +65,7 @@ const Net=(()=>{
    case'lamp_power':return Prog.up.lamps>0;
    case'cable_cut':return Number.isInteger(a.i)&&!!GS[a.i]&&GS[a.i].cut==null&&isFinite(a.t);
    case'cable_fix':return Number.isInteger(a.i)&&!!GS[a.i]&&GS[a.i].cut!=null;
+   case'shutoff':return !!world&&world.exposed()&&!world.shut;
    case'bank_add':return DEV&&Number.isInteger(a.n)&&a.n>0&&a.n<=10000;
    case'mower_grab':return!mowerOwner;
    case'mower_drop':return mowerOwner===b;

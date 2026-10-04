@@ -1,6 +1,6 @@
 # BURST — Find the Pipe
 
-A first-person digging game in the browser (three.js r128, no build step). Something under the lawn is leaking: probe the yard, dig, and expose the burst main before the basement floods.
+A first-person digging game in the browser (three.js r128, no build step). Something under the lawn is leaking: probe the yard, dig up the burst main, and press E on the leak to shut it off. The yard cycles through clear sky, cloud and rain.
 
 **Play:** https://digging.t-tek.dev
 
@@ -16,12 +16,12 @@ A first-person digging game in the browser (three.js r128, no build step). Somet
 | W A S D, Shift | Walk, sprint |
 | Space | Jump |
 | E | Grab / drop the mower, a rock, or a find (trash goes in the trashcan, artifacts in the crate) |
-| E at the workbench | Open the shop; 1-6 buys an upgrade (walk away or press E to close) |
+| E at the workbench | Open the shop; click an upgrade to buy it (walk away or press E to close) |
 | G | Place a garden light where you aim (or pick up the one nearby) |
 | E at the wall socket | Switch the garden lights on / off |
 | E at a cut cable | Splice it (aim at the break). Shovels and a running mower cut cables |
 | L | Flashlight (needs the Flashlight upgrade) |
-| Esc | Pause menu (New yard is here) |
+| Esc | Pause menu |
 
 ## Day, night and upgrades
 
@@ -39,7 +39,7 @@ Menu > Co-op multiplayer. Set your name (up to 12 characters; it is remembered),
 
 Serve the folder over HTTP, for example `python -m http.server`, then open `http://localhost:8000`.
 
-On localhost or with `?dev` in the URL, the console command `addPoints(n)` adds n points. There is no key for it.
+On localhost or with `?dev` in the URL, the console commands are `addPoints(n)` and `setWeather("clear")`, `setWeather("cloud")`, `setWeather("rain")`, or `setWeather("auto")`. There is no key for them. `setWeather` only changes the sky on your machine.
 
 ## Files
 

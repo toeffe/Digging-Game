@@ -27,12 +27,13 @@ button:hover:not(:disabled){background:var(--ac);color:#1b1410}button:disabled{o
 #code{width:130px;letter-spacing:.3em;text-transform:uppercase}#pname{width:260px}
 #mpMsg{min-height:1.5em;color:var(--ac)}#room{font-size:20px;letter-spacing:.1em;color:var(--ac)}
 .szsel{display:flex;align-items:center;gap:6px}.szsel span{opacity:.75;font-size:14px;margin-right:4px}.szsel button{min-width:0;font-size:14px;padding:6px 12px}.szsel button.on{background:var(--ac);color:#1b1410}body.cl .szsel{display:none}
-.mponly,.clonly{display:none}body.mp .mponly{display:block}body.cl .clonly{display:block}body.cl #bNew2,body.cl #bNew3{display:none}
+.mponly,.clonly{display:none}body.mp .mponly{display:block}body.cl .clonly{display:block}body.cl #bNew3{display:none}
 #rm{opacity:.85}
 #hint{display:none;position:absolute;left:50%;top:58%;transform:translateX(-50%);font-size:17px;background:#000a;padding:6px 14px;border-radius:8px}
-#shop{display:none;position:absolute;right:16px;top:70px;width:min(330px,86vw);background:#1b1410e6;border:2px solid var(--ac);border-radius:8px;padding:12px 14px}
+#shop{display:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(330px,86vw);background:#1b1410e6;border:2px solid var(--ac);border-radius:8px;padding:12px 14px;pointer-events:auto}
 #shop h3{margin:0 0 8px;letter-spacing:.2em;color:var(--ac);font-size:18px}#shop ul{list-style:none;margin:0;padding:0}
-#shop li{position:relative;padding:5px 60px 5px 0;border-bottom:1px solid #fff2;font-size:15px}#shop li b{display:inline-block;width:20px;color:var(--ac)}#shop li i{opacity:.7;font-size:13px;font-style:normal}
-#shop li span{position:absolute;right:0;top:5px;color:var(--ac);font-weight:bold}#shop li small{display:block;opacity:.65;font-size:12px;margin-left:20px}
-#shop li.no{opacity:.5}#shop li.mx span{color:#7fe0ff}#shop p{margin:8px 0 0;font-size:12px;opacity:.8;max-width:none}
+#shop li{position:relative;padding:6px 60px 6px 8px;border-bottom:1px solid #fff2;font-size:15px;cursor:pointer;border-radius:4px}#shop li:hover{background:#e9a23b22}
+#shop li i{opacity:.7;font-size:13px;font-style:normal}
+#shop li span{position:absolute;right:8px;top:6px;color:var(--ac);font-weight:bold}#shop li small{display:block;opacity:.65;font-size:12px}
+#shop li.no{opacity:.5}#shop li.mx{cursor:default}#shop li.mx span{color:#7fe0ff}#shop p{margin:8px 0 0;font-size:12px;opacity:.8;max-width:none}
 #toast{position:absolute;left:50%;top:18%;transform:translateX(-50%);font-size:20px;background:#000a;padding:10px 18px;border-radius:8px;opacity:0;transition:opacity .4s;text-align:center;max-width:80vw}
