@@ -9,10 +9,11 @@ A first-person digging game in the browser (three.js r128, no build step). Somet
 | Input | Action |
 | --- | --- |
 | Mouse | Look |
-| Left click (hold) | Dig |
+| Left click (hold) | Dig (mown grass only) |
+| Left click, holding the mower | Start / stop the engine |
 | F / right-click | Ground probe |
 | W A S D, Shift | Walk, sprint |
-| Q / E | Turn |
+| E | Grab / drop the mower or a rock |
 | Esc | Pause menu (New yard is here) |
 
 ## Run locally

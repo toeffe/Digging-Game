@@ -182,9 +182,20 @@ const GN=26000,gg=new THREE.ConeGeometry(.024,.4,3,3,true).translate(0,.2,0);
 {const a=gg.attributes.position,cc=new Float32Array(a.count*3);for(let i=0;i<a.count;i++){const y=a.getY(i)/.4;a.setX(i,a.getX(i)+y*y*.12);cc.fill(.15+.85*Math.min(1,y),i*3,i*3+3)}gg.computeVertexNormals();gg.setAttribute('color',new THREE.BufferAttribute(cc,3))}
 const grass=new THREE.InstancedMesh(gg,new THREE.MeshStandardMaterial({vertexColors:true,roughness:.95,side:THREE.DoubleSide}),GN),gp=[],go=new THREE.Object3D(),gc=new THREE.Color();grass.receiveShadow=true;grass.frustumCulled=false;scene.add(grass);
 const GU={uT:{value:0}};grass.material.onBeforeCompile=sd=>{sd.uniforms.uT=GU.uT;sd.vertexShader='uniform float uT;\n'+sd.vertexShader.replace('#include <begin_vertex>','vec3 transformed=vec3(position);float wv=position.y/.4;vec4 ip=instanceMatrix*vec4(0.,0.,0.,1.);transformed.x+=sin(uT*1.8+ip.x*.7+ip.z*.5)*.06*wv;transformed.z+=cos(uT*1.4+ip.x*.4+ip.z*.8)*.05*wv;')};
-function buildGrass(){const r=rng(world.seed+1);gp.length=0;for(let n=0;n<GN;n++){let x,z;do{x=(r()-.5)*19.6;z=-9.8+r()*19.6}while(!free(x,z)||(Math.abs(x)<1.2&&z<-9));const s=.7+r()*.9,y=world.hAt(x,z)-.02;gp.push({x,z,y});
+const MG=40,MC=.5,mown=new Uint8Array(MG*MG),gbuck=[];/* 0.5 m mown grid over the 20 m yard, blades bucketed per cell */
+const mcell=(x,z)=>Math.max(0,Math.min(MG-1,Math.floor((x+S/2)/MC)))+MG*Math.max(0,Math.min(MG-1,Math.floor((z+S/2)/MC)));
+function buildGrass(){const r=rng(world.seed+1);gp.length=0;mown.fill(0);for(let i=0;i<MG*MG;i++)gbuck[i]=[];
+ for(let n=0;n<GN;n++){let x,z;do{x=(r()-.5)*19.6;z=-9.8+r()*19.6}while(!free(x,z)||(Math.abs(x)<1.2&&z<-9));const s=.7+r()*.9,y=world.hAt(x,z)-.02;gp.push({x,z,y,s});gbuck[mcell(x,z)].push(n);
  go.position.set(x,y,z);go.rotation.set((r()-.5)*.5,r()*6,(r()-.5)*.5);go.scale.set(1,s,1);go.updateMatrix();grass.setMatrixAt(n,go.matrix);grass.setColorAt(n,gc.setHSL(.22+r()*.06,.55,.28+r()*.18).convertSRGBToLinear())}
  grass.instanceMatrix.needsUpdate=grass.instanceColor.needsUpdate=true}
+/* cut whole cells whose centre is under the deck, so the swath is a solid strip instead of scattered blades */
+function mowAt(x,z,rad){let ch=0;const i0=Math.max(0,Math.floor((x-rad+S/2)/MC)),i1=Math.min(MG-1,Math.floor((x+rad+S/2)/MC)),j0=Math.max(0,Math.floor((z-rad+S/2)/MC)),j1=Math.min(MG-1,Math.floor((z+rad+S/2)/MC));
+ for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++){const ci=i+MG*j;if(mown[ci])continue;if(Math.hypot((i+.5)*MC-S/2-x,(j+.5)*MC-S/2-z)>rad)continue;mown[ci]=1;ch=1;
+  for(const n of gbuck[ci]){const q=gp[n];if(q.gone||q.cut)continue;q.cut=1;
+   go.position.set(q.x,q.y,q.z);go.rotation.set(0,0,0);go.scale.set(1,q.s*.12,1);go.updateMatrix();grass.setMatrixAt(n,go.matrix)}}
+ if(ch)grass.instanceMatrix.needsUpdate=true}
+/* a dig needs the aim spot and its neighbours within ~1 m mown (no grass cells count as mown) */
+function isMown(x,z){for(let j=-2;j<=2;j++)for(let i=-2;i<=2;i++){const cx=x+i*MC,cz=z+j*MC;if(Math.hypot(i,j)>2.2||Math.abs(cx)>9.9||Math.abs(cz)>9.9)continue;if(!mown[mcell(cx,cz)]&&gbuck[mcell(cx,cz)].length)return false}return true}
 /* static grass beyond the fence so the surroundings match the lawn; thins out with distance */
 {const ON=40000,og=new THREE.InstancedMesh(gg,grass.material,ON),r=rng(5);og.receiveShadow=true;og.frustumCulled=false;
  for(let n=0;n<ON;){const x=(r()-.5)*47,z=(r()-.5)*47,d=Math.max(Math.abs(x),Math.abs(z));
@@ -248,6 +259,21 @@ const sh=new THREE.Group();{
  shov.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new V3().crossVectors(dh,nn).normalize(),dh,nn));
  shov.position.copy(dh).multiplyScalar(-1.2);
  sh.add(shov);cam.add(sh);sh.visible=false}
+/* ---------- push mower: deck, wheels, engine, bag, handle. Spawned near the house path each yard ---------- */
+const mower=new THREE.Group();{const body=mat(0xc0392b,{roughness:.55,metalness:.15}),steel2=mat(0xc8d0d6,{roughness:.35,metalness:.6}),tyre=mat(0x222222,{roughness:.9});
+ const deck=new THREE.Mesh(new THREE.CylinderGeometry(.42,.45,.16,20),body);deck.position.y=.26;mower.add(deck);
+ const chute=new THREE.Mesh(new THREE.BoxGeometry(.28,.1,.34),body);chute.position.set(0,.34,-.32);mower.add(chute);
+ const eng=new THREE.Mesh(new THREE.BoxGeometry(.3,.22,.3),mat(0x2c2c2c,{roughness:.6,metalness:.4}));eng.position.set(0,.42,.05);mower.add(eng);
+ const bag=new THREE.Mesh(new THREE.BoxGeometry(.46,.4,.28),mat(0x6b5a3a,{roughness:.95}));bag.position.set(0,.52,-.55);mower.add(bag);
+ const handle=new THREE.Mesh(new THREE.CylinderGeometry(.018,.018,.9,8),steel2);handle.position.set(0,.72,-.72);handle.rotation.x=-.85;mower.add(handle);
+ const grip=new THREE.Mesh(new THREE.CylinderGeometry(.016,.016,.34,8),mat(0x111111,{roughness:.8}));grip.position.set(0,1.05,-1.02);grip.rotation.z=Math.PI/2;mower.add(grip);
+ mower.wheels=[];for(const[wx,wz]of[[-.34,.28],[.34,.28],[-.34,-.28],[.34,-.28]]){const w=new THREE.Mesh(new THREE.CylinderGeometry(wz<0?.11:.17,wz<0?.11:.17,.06,12),tyre);w.rotation.z=Math.PI/2;w.position.set(wx,.17,wz);mower.add(w);mower.wheels.push(w)}
+ [deck,chute,eng,bag].forEach(m=>{m.castShadow=m.receiveShadow=true});scene.add(mower)}
+let mowerHeld=false,mowerOn=false,clipM,mowX,mowZ;
+function placeMower(){mowerHeld=false;mowerOn=false;mower.position.set(2.4,world.hAt(2.4,-7.4),-7.4);mower.rotation.set(0,0,0);if(clipM)clipM.gain.value=0}
+/* ---------- carried rock (drawn in the hands; the instance stays hidden in `rocks`) ---------- */
+let carry=-1;const carryM=new THREE.Mesh(rockG,mat(0xffffff,{roughness:.95}));carryM.castShadow=true;carryM.visible=false;cam.add(carryM);
+const handsBusy=()=>mowerHeld||carry>=0;
 const rings=[],rgeo=new THREE.RingGeometry(.985,1,120).rotateX(-Math.PI/2);
 function addRing(x,z,r){const m=new THREE.Mesh(rgeo,new THREE.MeshBasicMaterial({color:0x7fe0ff,transparent:true,opacity:.6,depthTest:false,toneMapped:false}));m.position.set(x,.35,z);m.scale.setScalar(.01);m.renderOrder=5;scene.add(m);rings.push({m,r,t:0});if(rings.length>30){scene.remove(rings.shift().m)}}
 const pg=new THREE.IcosahedronGeometry(.07,0),waterM=new THREE.MeshBasicMaterial({color:0x9fd4ff,transparent:true,opacity:.8}),parts=[],pmc={};
@@ -263,7 +289,7 @@ function stepParts(dt){for(let i=parts.length-1;i>=0;i--){const q=parts[i],P=q.m
 let AC,NB,hissG;
 function audio(){if(AC){AC.resume();return}AC=new(window.AudioContext||window.webkitAudioContext)();NB=AC.createBuffer(1,AC.sampleRate*2,AC.sampleRate);const d=NB.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
  const lp=(type,fq,g)=>{const s=AC.createBufferSource();s.buffer=NB;s.loop=true;const f=AC.createBiquadFilter();f.type=type;f.frequency.value=fq;const o=AC.createGain();o.gain.value=g;s.connect(f);f.connect(o);o.connect(AC.destination);s.start();return o};
- lp('lowpass',350,.06);hissG=lp('bandpass',3200,0)}
+ lp('lowpass',350,.06);hissG=lp('bandpass',3200,0);clipM=lp('bandpass',900,0)}
 function nz(type,fq,dur,vol,dl=0){if(!AC)return;const s=AC.createBufferSource();s.buffer=NB;const f=AC.createBiquadFilter();f.type=type;f.frequency.value=fq;const g=AC.createGain(),t=AC.currentTime+dl;g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.001,t+dur);s.connect(f);f.connect(g);g.connect(AC.destination);s.start(t,Math.random(),dur)}
 function grain(n,span,type,f0,f1,vol,dl=0){for(let i=0;i<n;i++)nz(type,f0+Math.random()*(f1-f0),.04,vol*(.5+Math.random()*.5),dl+Math.random()*span)}
 function sweep(type,f0,f1,dur,vol,dl=0){if(!AC)return;const s=AC.createBufferSource();s.buffer=NB;const f=AC.createBiquadFilter();f.type=type;f.Q.value=2;const g=AC.createGain(),t=AC.currentTime+dl;f.frequency.setValueAtTime(f0,t);f.frequency.exponentialRampToValueAtTime(f1,t+dur);g.gain.setValueAtTime(.001,t);g.gain.linearRampToValueAtTime(vol,t+dur*.2);g.gain.exponentialRampToValueAtTime(.001,t+dur);s.connect(f);f.connect(g);g.connect(AC.destination);s.start(t,Math.random(),dur)}
@@ -326,20 +352,34 @@ let state='intro',stepD=0,paused=false,locked=false,fallback=false,dragging=fals
 const keys={},free=(x,z)=>obst.every(o=>Math.hypot(x-o.x,z-o.z)>o.r+.3);
 function show(id){document.querySelectorAll('.scr').forEach(e=>e.classList.toggle('show',e.id===id))}
 function toast(t){const e=$('toast');e.textContent=t;e.style.opacity=1;toastT=3.5}
-function newGame(){world=new World(Math.random()*1e9|0);buildBuried();buildRocks();sync();buildGrass();parts.forEach(q=>scene.remove(q.m));parts.length=0;rings.forEach(q=>scene.remove(q.m));rings.length=0;geyser=false;px=0;pz=6;yaw=0;pitch=-.35;ey=world.hAt(0,6)+1.7;pc=0;elapsed=0;$('dg').textContent=0;$('tm').textContent='0:00';$('pr').textContent='Probe ready — press F or right-click'}
+function newGame(){world=new World(Math.random()*1e9|0);buildBuried();buildRocks();sync();buildGrass();placeMower();dropCarry(true);parts.forEach(q=>scene.remove(q.m));parts.length=0;rings.forEach(q=>scene.remove(q.m));rings.length=0;geyser=false;px=0;pz=6;yaw=0;pitch=-.35;ey=world.hAt(0,6)+1.7;pc=0;elapsed=0;$('dg').textContent=0;$('tm').textContent='0:00';$('pr').textContent='Probe ready — press F or right-click'}
 function lock(){try{cv.requestPointerLock()}catch(e){}setTimeout(()=>{fallback=!document.pointerLockElement},250)}
 let seenHelp=false;try{seenHelp=localStorage.getItem('burstHelp')==='1'}catch(e){}
 function startPlay(){audio();state='play';newGame();$('hud').style.display='block';sh.visible=true;
  if(seenHelp){paused=false;show(null);lock()}else{paused=true;holding=dragging=false;show('help')}}
 $('bGot').onclick=()=>{seenHelp=true;try{localStorage.setItem('burstHelp','1')}catch(e){}paused=false;show(null);lock()};
 function toMenu(){state='menu';paused=false;geyser=false;document.exitPointerLock?.();$('hud').style.display='none';sh.visible=false;show('menu')}
-function tryDig(){if(state!=='play'||paused||!aim||cd>0||Math.abs(aim.x)>8.6||Math.abs(aim.z)>8.6)return;cd=.8;swing=1;Net.send({type:'dig',x:aim.x,z:aim.z,by:ME})}
+function tryDig(){if(state!=='play'||paused||!aim||cd>0||Math.abs(aim.x)>8.6||Math.abs(aim.z)>8.6||handsBusy())return;if(!isMown(aim.x,aim.z)){toast('Mow the grass first');return}cd=.8;swing=1;Net.send({type:'dig',x:aim.x,z:aim.z,by:ME})}
+/* E: drop what you're holding, else grab the mower if you're beside it, else grab the nearest exposed rock */
+function useE(){if(state!=='play'||paused)return;audio();
+ if(mowerHeld){mowerHeld=false;return}
+ if(carry>=0){if(aim)Net.send({type:'rock_place',n:carry,x:aim.x,z:aim.z,by:ME});else toast('Aim at the ground to put it down');return}
+ if(Math.hypot(px-mower.position.x,pz-mower.position.z)<2.2){mowerHeld=true;mowerOn=true;return}
+ const dir=new V3(0,0,-1).applyQuaternion(cam.quaternion);let best=-1,bd=2.4;
+ for(let n=0;n<RN;n++){const q=rk[n];if(q.held)continue;const h=world.hAt(q.x,q.z);if(q.y+q.s*.4<h)continue;/* still buried */
+  const d=Math.hypot(q.x-px,q.z-pz);if(d>3.5||d>=bd)continue;if(new V3(q.x-px,q.y+q.s*.4-ey,q.z-pz).normalize().dot(dir)<.6)continue;best=n;bd=d}
+ if(best<0)return;if(rk[best].s>.32){toast('Too heavy');return}Net.send({type:'rock_pick',n:best,by:ME})}
+function dropCarry(reset){if(carry<0)return;if(reset){rk[carry].held=0;setRock(carry);rocks.instanceMatrix.needsUpdate=true}carry=-1}
 function probe(){if(state!=='play'||paused||pc>0)return;pc=2.5;nz('lowpass',140,.5,1);sweep('bandpass',200,1400,.6,.35,.05);const gy=world.hAt(px,pz);let bs,bd=1e9;
  for(const s of world.sig){const d=Math.hypot(px-s.x,gy-s.y,pz-s.z);if(d<bd){bd=d;bs=s}}
  if(bd>13){$('pr').textContent='Probe: no signal in range';return}
  const dp=(gy-bs.y)*(1+(Math.random()-.5)*.1),dn=bd*(1+(Math.random()-.5)*.14)+(Math.random()-.5)*.3;
  $('pr').textContent=`Probe: object ~${dn.toFixed(1)} m away · ~${dp.toFixed(1)} m deep`;addRing(px,pz,Math.sqrt(Math.max(.04,dn*dn-dp*dp)))}
-Net.on(a=>{if(a.type!=='dig')return;world.apply(a);sync();clearGrass(a.x,a.z);settleRocks(a.x,a.z);$('dg').textContent=world.digs;const y=world.hAt(a.x,a.z);
+Net.on(a=>{
+ if(a.type==='rock_pick'){const q=rk[a.n];q.held=1;go.position.set(0,-50,0);go.scale.setScalar(0);go.updateMatrix();rocks.setMatrixAt(a.n,go.matrix);rocks.instanceMatrix.needsUpdate=true;
+  if(a.by===ME){carry=a.n;carryM.scale.set(q.s*q.w,q.s,q.s*q.w);carryM.material.color.fromArray(rocks.instanceColor.array,a.n*3)}}
+ if(a.type==='rock_place'){const q=rk[a.n];q.held=0;q.x=a.x;q.z=a.z;q.y=world.hAt(a.x,a.z)+q.s*.3;setRock(a.n);rocks.instanceMatrix.needsUpdate=true;if(a.by===ME&&carry===a.n)carry=-1;return}
+ if(a.type!=='dig')return;world.apply(a);sync();clearGrass(a.x,a.z);settleRocks(a.x,a.z);$('dg').textContent=world.digs;const y=world.hAt(a.x,a.z);
  for(let i=0;i<18;i++){const px2=a.x+(Math.random()-.5)*.6,pz2=a.z+(Math.random()-.5)*.6,q=digDepth(px2,pz2),dd=q.d-Math.random()*.2;
   spawn(new V3(px2,y+.1,pz2),new V3((Math.random()-.5)*3,2.5+Math.random()*3,(Math.random()-.5)*3),1.6,false,soilMat(dd<.05&&Math.random()<.4?-1:Math.max(0,dd),q.n))}
  if(a.by===ME)thud();if(state!=='play')return;
@@ -350,11 +390,11 @@ function win(){state='won';geyser=true;nz('bandpass',1800,2.5,.7);sweep('lowpass
  setTimeout(()=>{if(state==='won'){document.exitPointerLock?.();$('hud').style.display='none';show('win')}},2400)}
 
 /* ---------- input ---------- */
-addEventListener('keydown',e=>{keys[e.code]=true;if(state==='intro'){state='menu';audio();show('menu');return}if(e.code==='KeyF')probe()});
+addEventListener('keydown',e=>{keys[e.code]=true;if(state==='intro'){state='menu';audio();show('menu');return}if(e.code==='KeyF')probe();if(e.code==='KeyE'&&!e.repeat)useE()});
 addEventListener('keyup',e=>keys[e.code]=false);addEventListener('contextmenu',e=>e.preventDefault());
 $('intro').addEventListener('click',()=>{if(state==='intro'){state='menu';audio();show('menu')}});
 addEventListener('mousemove',e=>{if(state==='intro'||paused)return;if(locked||(fallback&&dragging)){yaw-=e.movementX*.0022;pitch=Math.max(-1.45,Math.min(1.45,pitch-e.movementY*.0022));moved+=Math.abs(e.movementX)+Math.abs(e.movementY)}});
-addEventListener('mousedown',e=>{if(e.target.closest('button')||state!=='play'||paused)return;if(e.button===2){probe();return}if(e.button!==0)return;holding=true;heldT=0;autoDug=false;if(locked)tryDig();else if(fallback){dragging=true;moved=0}});
+addEventListener('mousedown',e=>{if(e.target.closest('button')||state!=='play'||paused)return;if(e.button===2){probe();return}if(e.button!==0)return;if(mowerHeld){mowerOn=!mowerOn;return}holding=true;heldT=0;autoDug=false;if(locked)tryDig();else if(fallback){dragging=true;moved=0}});
 addEventListener('mouseup',e=>{if(e.button!==0)return;if(dragging&&moved<6&&!autoDug)tryDig();dragging=false;holding=false});
 addEventListener('blur',()=>{holding=dragging=false});
 document.addEventListener('pointerlockchange',()=>{locked=document.pointerLockElement===cv;if(!locked&&state==='play'&&!fallback){holding=false;paused=true;show('pause')}});
@@ -366,8 +406,7 @@ for(const id of['bMenu','bMenu2','bMenu3'])$(id).onclick=toMenu;
 /* ---------- loop ---------- */
 function play(dt){
  const K=keys,ox=px,oz=pz,f=(K.KeyW||K.ArrowUp?1:0)-(K.KeyS||K.ArrowDown?1:0),s=(K.KeyD?1:0)-(K.KeyA?1:0);
- if(!paused){yaw+=((K.KeyQ?1:0)-(K.KeyE?1:0))*1.8*dt;
-  if(f||s){const sp=(K.ShiftLeft?6.5:4)*dt,dx=-Math.sin(yaw)*f+Math.cos(yaw)*s,dz=-Math.cos(yaw)*f-Math.sin(yaw)*s,l=Math.hypot(dx,dz),nx=px+dx/l*sp,nz2=pz+dz/l*sp;
+ if(!paused){if(f||s){const sp=(K.ShiftLeft?6.5:4)*dt,dx=-Math.sin(yaw)*f+Math.cos(yaw)*s,dz=-Math.cos(yaw)*f-Math.sin(yaw)*s,l=Math.hypot(dx,dz),nx=px+dx/l*sp,nz2=pz+dz/l*sp;
    if(free(nx,pz)&&Math.abs(nx)<9.3)px=nx;if(free(px,nz2)&&nz2>-9.2&&nz2<9.3)pz=nz2}
   if(state==='play')elapsed+=dt;stepD+=Math.hypot(px-ox,pz-oz);if(stepD>(K.ShiftLeft?2:1.5)){stepD=0;stepSnd()}}
  ey+=(world.hAt(px,pz)+1.7-ey)*Math.min(1,dt*10);
@@ -378,7 +417,16 @@ function play(dt){
  /* holding left mouse = keep digging at the tool's max rate (fallback drag mode: only while the cursor stays still) */
  if(holding&&state==='play'&&!paused){heldT+=dt;if(locked)tryDig();else if(dragging&&moved<6&&heldT>.3){const c0=cd;tryDig();if(cd>c0)autoDug=true}}
  pc=Math.max(0,pc-dt);swing=Math.max(0,swing-dt*1.5);const sw=Math.sin((1-swing)*Math.PI)*(swing>0?1:0);
- sh.position.set(.45,-.62-sw*.08+Math.sin(T*1.7)*.004,-.3-sw*.12);sh.rotation.set(-sw*.7,sw*.1,sw*.05);
+ sh.visible=!handsBusy();sh.position.set(.45,-.62-sw*.08+Math.sin(T*1.7)*.004,-.3-sw*.12);sh.rotation.set(-sw*.7,sw*.1,sw*.05);
+ /* mower: pushed 1.2 m ahead while held, otherwise it rests on the ground; the engine cuts grass and throws clippings */
+ if(mowerHeld){const fx=-Math.sin(yaw),fz=-Math.cos(yaw),mx=px+fx*2.1,mz=pz+fz*2.1;mower.position.set(mx,world.hAt(mx,mz),mz);mower.rotation.y=yaw+Math.PI}
+ else mower.position.y+=(world.hAt(mower.position.x,mower.position.z)-mower.position.y)*Math.min(1,dt*10);
+ if(mowerOn){const mx=mower.position.x,mz=mower.position.z;if(mowX===undefined){mowX=mx;mowZ=mz}const steps=Math.max(1,Math.ceil(Math.hypot(mx-mowX,mz-mowZ)/.25));
+ for(let s=1;s<=steps;s++)mowAt(mowX+(mx-mowX)*s/steps,mowZ+(mz-mowZ)*s/steps,.7);mowX=mx;mowZ=mz;mower.wheels.forEach(w=>w.rotation.x+=dt*18);
+  if(Math.random()<.6)spawn(mower.position.clone().add(new V3((Math.random()-.5)*.6,.3,(Math.random()-.5)*.6)),new V3((Math.random()-.5)*1.2,1+Math.random(),(Math.random()-.5)*1.2),.6,false,soilMat(-1,0))}
+ if(AC&&clipM)clipM.gain.setTargetAtTime(mowerOn&&state==='play'&&!paused?.09:0,AC.currentTime,.1);
+ /* carried rock sits in the hands */
+ if(carry>=0){carryM.visible=true;carryM.position.set(.35,-.35,-.7);carryM.rotation.set(rk[carry].a,rk[carry].b+T*.4,rk[carry].c)}else carryM.visible=false;
  $('sf').style.width=((1-pc/2.5)*100)+'%';
  const hd=Math.hypot(px-world.burst.x,world.hAt(px,pz)-world.burst.y,pz-world.burst.z);
  if(AC&&hissG)hissG.gain.setTargetAtTime(state==='play'&&!paused&&hd<3?Math.pow(1-hd/3,2)*.16:0,AC.currentTime,.15);
