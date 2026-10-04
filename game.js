@@ -649,12 +649,9 @@ function setYardSize(s){if(!SIZES.includes(s))s=SIZES[0];if(yardBuilt&&s===S)ret
  buildTerrain();buildYard();buildOuter();yardBuilt=true}
 function newGame(seed,size){Prog=freshProg();flashOn=false;sel=want=0;swapK=0;saveProg();/* every new yard starts from scratch: 80 points, no upgrades */setYardSize(size||(yardBuilt?S:wantSize));world=new World(seed==null?rndSeed():seed);Net.reset();glReset();dayT=DAY0;buildBuried();buildRocks();dropCarry(true);buildFinds();sync(true);buildGrass();placeMower();parts.forEach(q=>scene.remove(q.m));parts.length=0;rings.forEach(q=>scene.remove(q.m));rings.length=0;geyser=false;px=0;pz=YH-4;yaw=0;pitch=-.35;py=world.hAt(0,pz);ey=py+1.7;pvx=pvy=pvz=0;pc=0;elapsed=0;setShop(false);hudPts();$('tm').textContent='0:00'}
 function lock(){try{cv.requestPointerLock()}catch(e){}setTimeout(()=>{fallback=!document.pointerLockElement},250)}
-let seenHelp=false;try{seenHelp=localStorage.getItem('burstHelp')==='1'}catch(e){}
 function startPlay(seed,size){audio();state='play';newGame(seed,size||wantSize);$('hud').style.display='block';sh.visible=true;
- /* co-op: entering is async, so there is no click to grab the pointer with; always land on help/pause and let the player click */
- if(Net.mode!=='solo'){paused=true;holding=dragging=false;show(seenHelp?'pause':'help');return}
- if(seenHelp){paused=false;show(null);lock()}else{paused=true;holding=dragging=false;show('help')}}
-$('bGot').onclick=()=>{seenHelp=true;try{localStorage.setItem('burstHelp','1')}catch(e){}paused=false;show(null);lock()};
+ paused=true;holding=dragging=false;show('help')}
+$('bGot').onclick=()=>{paused=false;show(null);lock()};
 function toMenu(){Net.leave();setShop(false);state='menu';paused=false;geyser=false;document.exitPointerLock?.();$('hud').style.display='none';sh.visible=hp.visible=hf.visible=hl.visible=false;show('menu');if(wantSize!==S)newGame(undefined,wantSize)}
 const canSee=()=>dayF>.45||(flashOn&&Prog.up.lantern>0)||(!!aim&&glLit(aim.x,aim.z));
 function lampKey(){if(!Prog.up.lamps){toast('Buy garden lights at the workbench');return}

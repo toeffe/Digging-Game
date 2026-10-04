@@ -18,7 +18,10 @@ button:hover:not(:disabled){background:var(--ac);color:#1b1410}button:disabled{o
 .hb i{position:absolute;left:5px;top:1px;font-size:11px;font-style:normal;opacity:.7}.hb svg{width:30px;height:30px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .hb.on{border-color:var(--ac);color:var(--ac);transform:translateY(-4px) scale(1.08);box-shadow:0 0 12px #e9a23b66}.hb.lock{opacity:.3}
 #cdf{position:absolute;inset:0 0 auto;height:0;background:#0a0806cc;pointer-events:none;z-index:1}.hb{overflow:hidden}
-#help ul{list-style:none;padding:0;margin:6px 0 10px;text-align:left;line-height:1.9;font-size:17px}#help b{display:inline-block;min-width:150px;color:var(--ac)}
+#help .pop{width:min(560px,92vw);max-height:min(86vh,680px);overflow:auto;box-sizing:border-box;background:#1b1410f2;border:2px solid var(--ac);border-radius:10px;padding:22px 26px 18px;text-align:left}
+#help h2{text-align:center;font-size:clamp(28px,5vw,40px);letter-spacing:.12em;margin:0 0 10px}
+#help ol{margin:0 0 12px;padding-left:1.25em;line-height:1.45;font-size:17px}#help li{margin:7px 0}#help b{color:var(--ac)}
+#help .pop p{max-width:none;font-size:15px;opacity:.88}#help .fine{margin-top:8px;font-size:13px;opacity:.6}#help .pop button{display:block;margin:14px auto 0}
 .row{display:flex;gap:8px}.row button{min-width:0}
 #code,#pname{font:inherit;font-size:18px;padding:12px;text-align:center;background:#2d2118;color:var(--fg);border:2px solid var(--ac);border-radius:6px;box-sizing:border-box}
 #code{width:130px;letter-spacing:.3em;text-transform:uppercase}#pname{width:260px}
