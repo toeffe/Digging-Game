@@ -1,7 +1,7 @@
-/* ARCHITECTURE: World = seeded deterministic state, mutated only by apply(action). Net.send() stamps + broadcasts actions
-   (local loopback now; swap for a WebSocket relay + shared seed for multiplayer). */
+/* ARCHITECTURE: World = seeded deterministic state, mutated only by apply(action). Net (net.js) validates, stamps and broadcasts
+   actions: solo applies them locally, co-op routes them through the host. `ME` is this player's id. */
 const $=id=>document.getElementById(id),V3=THREE.Vector3;
-const N=100,S=20,C=S/N,FLOOR=-5.6,ME='local',KIND={tank:'a buried septic tank',iron:'an old cast-iron pipe',gas:'a gas line — careful!',well:'an old well ring'};
+const N=100,S=20,C=S/N,FLOOR=-5.6,KIND={tank:'a buried septic tank',iron:'an old cast-iron pipe',gas:'a gas line — careful!',well:'an old well ring'};
 const FIND={can:['trash',5,'a tin can'],bottle:['trash',5,'a glass bottle'],boot:['trash',10,'an old boot'],coin:['artifact',50,'a coin'],arrow:['artifact',75,'an arrowhead'],pot:['artifact',100,'a clay pot'],idol:['artifact',150,'a golden idol']};
 const FSZ={can:.08,bottle:.09,boot:.06,coin:.02,arrow:.04,pot:.07,idol:.09};/* half-height, origin at the mesh centre */
 const BIN=[-9,3],CRATE=[9,4];
@@ -9,7 +9,7 @@ function rng(s){return()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t
 const PROT=[[-8,-6,1.1],[8.3,-4,.9],[-7.6,6.5,1],[BIN[0],BIN[1],.6],[CRATE[0],CRATE[1],.9]];/* x, z, protect radius for trees, bin, crate */
 class World{
  constructor(seed){this.seed=seed;const r=rng(seed),n=(N+1)**2,p=[r()*6,r()*6,r()*6];
-  this.H=new Float32Array(n);this.B=new Float32Array(n);this.D=new Uint8Array(n);this.PW=new Float32Array(n).fill(1);this.digs=0;
+  this.H=new Float32Array(n);this.B=new Float32Array(n);this.D=new Uint8Array(n);this.PW=new Float32Array(n).fill(1);this.digs=0;this.log=[];
   for(let j=0;j<=N;j++)for(let i=0;i<=N;i++){const x=i*C-S/2,z=j*C-S/2,k=j*(N+1)+i,e=Math.min(i,j,N-i,N-j)*C,f=Math.min(1,e/2.5);
    /* base relief fades to exactly 0 at the border so it meets the flat outer ground with no gap */
    this.H[k]=this.B[k]=(.12*Math.sin(x*.35+p[0])*Math.cos(z*.3+p[1])+.05*Math.sin(x*.9+z*.7+p[2]))*f*f*(3-2*f);
@@ -37,11 +37,9 @@ class World{
   const i0=Math.max(1,ix(x-P)),i1=Math.min(N-1,ix(x+P)+1),j0=Math.max(1,ix(z-P)),j1=Math.min(N-1,ix(z+P)+1);
   for(let it=0;it<10;it++)for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++){const k=j*(N+1)+i;for(const q of[k+1,k-1,k+N+1,k-N-1]){const d=W.H[k]-W.H[q];if(d>L){const m=(d-L)*.3*W.PW[k];if(m>0){W.H[k]-=m;W.H[q]+=m;W.D[k]=W.D[q]=1}}}}
   for(let t=0;t<=N;t++)for(const e of[t,N*(N+1)+t,t*(N+1),t*(N+1)+N]){W.H[e]=W.B[e];W.D[e]=0}/* border stays flush with the outer ground */
-  W.digs++}
+  W.digs++;W.log.push(x,z)}
  exposed(){let c=0;for(let t=-.02;t<=.021;t+=.02){const p=this.curve.getPoint(this.bt+t);if(this.hAt(p.x,p.z)<p.y+.1)c++}return c>=2}
 }
-const Net={seq:0,hs:[],on(h){this.hs.push(h)},send(a){a.seq=++this.seq;this.hs.forEach(h=>h(a))}};
-
 /* ---------- renderer: gamma-correct, filmic, PBR ---------- */
 const cv=$('c'),R=new THREE.WebGLRenderer({canvas:cv,antialias:true});
 R.setPixelRatio(1);R.shadowMap.enabled=true;R.shadowMap.type=THREE.PCFSoftShadowMap;
@@ -207,10 +205,11 @@ function buildGrass(){const r=rng(world.seed+1);gp.length=0;mown.fill(0);for(let
  grass.instanceMatrix.needsUpdate=grass.instanceColor.needsUpdate=true}
 /* cut whole cells whose centre is under the deck, so the swath is a solid strip instead of scattered blades */
 function mowAt(x,z,rad){let ch=0;const i0=Math.max(0,Math.floor((x-rad+S/2)/MC)),i1=Math.min(MG-1,Math.floor((x+rad+S/2)/MC)),j0=Math.max(0,Math.floor((z-rad+S/2)/MC)),j1=Math.min(MG-1,Math.floor((z+rad+S/2)/MC));
- for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++){const ci=i+MG*j;if(mown[ci])continue;if(Math.hypot((i+.5)*MC-S/2-x,(j+.5)*MC-S/2-z)>rad)continue;mown[ci]=1;ch=1;
-  for(const n of gbuck[ci]){const q=gp[n];if(q.gone||q.cut)continue;q.cut=1;
-   go.position.set(q.x,q.y,q.z);go.rotation.set(0,0,0);go.scale.set(1,q.s*.12,1);go.updateMatrix();grass.setMatrixAt(n,go.matrix)}}
+ for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++){const ci=i+MG*j;if(mown[ci])continue;if(Math.hypot((i+.5)*MC-S/2-x,(j+.5)*MC-S/2-z)>rad)continue;mown[ci]=1;ch=1;cutCell(ci);if(Net.mode!=='solo')mowQ.push(ci)}
  if(ch)grass.instanceMatrix.needsUpdate=true}
+const mowQ=[];/* cells mown since the last network flush (co-op only) */
+function cutCell(ci){for(const n of gbuck[ci]){const q=gp[n];if(q.gone||q.cut)continue;q.cut=1;
+  go.position.set(q.x,q.y,q.z);go.rotation.set(0,0,0);go.scale.set(1,q.s*.12,1);go.updateMatrix();grass.setMatrixAt(n,go.matrix)}}
 /* a dig needs the aim spot and its neighbours within ~1 m mown (no grass cells count as mown) */
 function isMown(x,z){for(let j=-2;j<=2;j++)for(let i=-2;i<=2;i++){const cx=x+i*MC,cz=z+j*MC;if(Math.hypot(i,j)>2.2||Math.abs(cx)>9.9||Math.abs(cz)>9.9)continue;const ci=mcell(cx,cz);if(mown[ci]||!gbuck[ci].length)continue;/* a dug cell has lost its grass, so it no longer blocks the shovel */
   if(gbuck[ci].some(n=>!gp[n].gone&&!gp[n].cut))return false}return true}
@@ -305,8 +304,8 @@ const mower=new THREE.Group();{const body=mat(0xc0392b,{roughness:.55,metalness:
  const grip=new THREE.Mesh(new THREE.CylinderGeometry(.016,.016,.34,8),mat(0x111111,{roughness:.8}));grip.position.set(0,1.05,-1.02);grip.rotation.z=Math.PI/2;mower.add(grip);
  mower.wheels=[];for(const[wx,wz]of[[-.34,.28],[.34,.28],[-.34,-.28],[.34,-.28]]){const w=new THREE.Mesh(new THREE.CylinderGeometry(wz<0?.11:.17,wz<0?.11:.17,.06,12),tyre);w.rotation.z=Math.PI/2;w.position.set(wx,.17,wz);mower.add(w);mower.wheels.push(w)}
  [deck,chute,eng,bag].forEach(m=>{m.castShadow=m.receiveShadow=true});scene.add(mower)}
-let mowerHeld=false,mowerOn=false,clipM,mowX,mowZ;
-function placeMower(){mowerHeld=false;mowerOn=false;mower.position.set(2.4,world.hAt(2.4,-7.4),-7.4);mower.rotation.set(0,0,0);if(clipM){clipM.gain.gain.value=0;clipM.blade.gain.value=0}}
+let mowerHeld=false,mowerOn=false,mowerOwner=null,mowerTarget=null,clipM,mowX,mowZ;/* mowerHeld: I own it; mowerOwner: id of whoever does (co-op) */
+function placeMower(){mowerHeld=false;mowerOn=false;mowerOwner=null;mowerTarget=null;mowX=undefined;mowQ.length=0;mower.position.set(2.4,world.hAt(2.4,-7.4),-7.4);mower.rotation.set(0,0,0);if(clipM){clipM.gain.gain.value=0;clipM.blade.gain.value=0}}
 /* ---------- carried rock (drawn in the hands; the instance stays hidden in `rocks`) ---------- */
 let carry=-1,carryF=-1,carryFM=null;const carryM=new THREE.Mesh(rockG,mat(0xffffff,{roughness:.95}));carryM.castShadow=true;carryM.visible=false;cam.add(carryM);
 const handsBusy=()=>mowerHeld||carry>=0||carryF>=0;
@@ -381,7 +380,7 @@ window.fxResize=(w,h)=>{rtC.setSize(w,h);rtD.setSize(w>>1,h>>1);rtB1.setSize(w>>
 function fxRender(){
  sunS.forEach(q=>q.position.copy(cam.position).addScaledVector(sdir,170));
  R.setRenderTarget(rtC);R.setClearColor(0x000000,1);R.clear(true,true,true);R.render(scene,cam);
- const os=[sh,carryM,...(carryFM?[carryFM]:[]),...sunS,...rings.map(q=>q.m)],vs=os.map(o=>o.visible);os.forEach(o=>o.visible=false);
+ const os=[sh,carryM,...(carryFM?[carryFM]:[]),...sunS,...rings.map(q=>q.m),...Net.tags()],vs=os.map(o=>o.visible);os.forEach(o=>o.visible=false);
  R.shadowMap.autoUpdate=false;scene.overrideMaterial=depthMat;R.setRenderTarget(rtD);R.setClearColor(0xffffff,1);R.clear(true,true,true);R.render(scene,cam);
  scene.overrideMaterial=null;R.setClearColor(0x000000,1);R.shadowMap.autoUpdate=true;os.forEach((o,i)=>o.visible=vs[i]);
  bright.uniforms.t.value=rtC.texture;pass(bright,rtB1);
@@ -396,22 +395,25 @@ let state='intro',stepD=0,paused=false,locked=false,fallback=false,dragging=fals
 const keys={},free=(x,z)=>obst.every(o=>Math.hypot(x-o.x,z-o.z)>o.r+.3);
 function show(id){document.querySelectorAll('.scr').forEach(e=>e.classList.toggle('show',e.id===id))}
 function toast(t){const e=$('toast');e.textContent=t;e.style.opacity=1;toastT=3.5}
-function newGame(){world=new World(Math.random()*1e9|0);buildBuried();buildRocks();dropCarry(true);buildFinds();sync();buildGrass();placeMower();parts.forEach(q=>scene.remove(q.m));parts.length=0;rings.forEach(q=>scene.remove(q.m));rings.length=0;geyser=false;px=0;pz=6;yaw=0;pitch=-.35;ey=world.hAt(0,6)+1.7;pc=0;elapsed=0;$('dg').textContent=0;$('sc').textContent=0;$('tm').textContent='0:00';$('pr').textContent='Probe ready — press F or right-click'}
+const rndSeed=()=>Math.random()*1e9|0,menuScr=()=>{const p=Net.pend;Net.pend='';return p?'mp':'menu'};
+function newGame(seed){world=new World(seed==null?rndSeed():seed);Net.reset();buildBuried();buildRocks();dropCarry(true);buildFinds();sync();buildGrass();placeMower();parts.forEach(q=>scene.remove(q.m));parts.length=0;rings.forEach(q=>scene.remove(q.m));rings.length=0;geyser=false;px=0;pz=6;yaw=0;pitch=-.35;ey=world.hAt(0,6)+1.7;pc=0;elapsed=0;$('dg').textContent=0;$('sc').textContent=0;$('tm').textContent='0:00';$('pr').textContent='Probe ready — press F or right-click'}
 function lock(){try{cv.requestPointerLock()}catch(e){}setTimeout(()=>{fallback=!document.pointerLockElement},250)}
 let seenHelp=false;try{seenHelp=localStorage.getItem('burstHelp')==='1'}catch(e){}
-function startPlay(){audio();state='play';newGame();$('hud').style.display='block';sh.visible=true;
+function startPlay(seed){audio();state='play';newGame(seed);$('hud').style.display='block';sh.visible=true;
+ /* co-op: entering is async, so there is no click to grab the pointer with; always land on help/pause and let the player click */
+ if(Net.mode!=='solo'){paused=true;holding=dragging=false;show(seenHelp?'pause':'help');return}
  if(seenHelp){paused=false;show(null);lock()}else{paused=true;holding=dragging=false;show('help')}}
 $('bGot').onclick=()=>{seenHelp=true;try{localStorage.setItem('burstHelp','1')}catch(e){}paused=false;show(null);lock()};
-function toMenu(){state='menu';paused=false;geyser=false;document.exitPointerLock?.();$('hud').style.display='none';sh.visible=false;show('menu')}
+function toMenu(){Net.leave();state='menu';paused=false;geyser=false;document.exitPointerLock?.();$('hud').style.display='none';sh.visible=false;show('menu')}
 function tryDig(){if(state!=='play'||paused||!aim||cd>0||Math.abs(aim.x)>8.6||Math.abs(aim.z)>8.6||handsBusy())return;if(!isMown(aim.x,aim.z)){toast('Mow the grass first');return}cd=.8;swing=1;Net.send({type:'dig',x:aim.x,z:aim.z,by:ME})}
 /* E: drop what you're holding, else grab the mower, else the nearest exposed rock, else a find */
 function useE(){if(state!=='play'||paused)return;audio();
- if(mowerHeld){mowerHeld=false;return}
+ if(mowerHeld){Net.flushMow();Net.send({type:'mower_drop',x:mower.position.x,z:mower.position.z,ry:mower.rotation.y,on:mowerOn?1:0,by:ME});return}
  if(carry>=0){if(aim)Net.send({type:'rock_place',n:carry,x:aim.x,z:aim.z,by:ME});else toast('Aim at the ground to put it down');return}
  if(carryF>=0){const f=world.finds[carryF],db=Math.hypot(px-BIN[0],pz-BIN[1]),dc=Math.hypot(px-CRATE[0],pz-CRATE[1]);
   if(db<2.5||dc<2.5){const at=db<=dc?'bin':'crate';if(at===(f.type==='trash'?'bin':'crate'))Net.send({type:'find_deposit',n:carryF,by:ME});else toast(f.type==='trash'?'That belongs in the trashcan':'That belongs in the crate');return}
   if(aim)Net.send({type:'find_place',n:carryF,x:aim.x,z:aim.z,by:ME});else toast('Aim at the ground to put it down');return}
- if(Math.hypot(px-mower.position.x,pz-mower.position.z)<2.2){mowerHeld=true;return}
+ if(Math.hypot(px-mower.position.x,pz-mower.position.z)<2.2){if(mowerOwner)toast('Someone else is using the mower');else Net.send({type:'mower_grab',by:ME});return}
  const dir=new V3(0,0,-1).applyQuaternion(cam.quaternion);let best=-1,bd=2.4;
  for(let n=0;n<RN;n++){const q=rk[n];if(q.held)continue;const h=world.hAt(q.x,q.z);if(q.y+q.s*.4<h)continue;/* still buried */
   const d=Math.hypot(q.x-px,q.z-pz);if(d>3.5||d>=bd)continue;if(new V3(q.x-px,q.y+q.s*.4-ey,q.z-pz).normalize().dot(dir)<.6)continue;best=n;bd=d}
@@ -426,35 +428,43 @@ function probe(){if(state!=='play'||paused||pc>0)return;pc=2.5;nz('lowpass',140,
  const dp=(gy-bs.y)*(1+(Math.random()-.5)*.1),dn=bd*(1+(Math.random()-.5)*.14)+(Math.random()-.5)*.3;
  $('pr').textContent=`Probe: object ~${dn.toFixed(1)} m away · ~${dp.toFixed(1)} m deep`;addRing(px,pz,Math.sqrt(Math.max(.04,dn*dn-dp*dp)))}
 Net.on(a=>{
- if(a.type==='find_pick'){const f=world.finds[a.n];if(!f||f.done)return;f.held=1;f.m.visible=false;if(a.by===ME){holdFind(a.n);toast(`${FIND[f.kind][2]} — ${f.type==='trash'?'take it to the trashcan':'take it to the crate'}`)}return}
+ if(a.type==='find_pick'){const f=world.finds[a.n];if(!f||f.done)return;f.held=a.by;f.m.visible=false;if(a.by===ME){holdFind(a.n);toast(`${FIND[f.kind][2]} — ${f.type==='trash'?'take it to the trashcan':'take it to the crate'}`)}return}
  if(a.type==='find_place'){const f=world.finds[a.n];f.held=0;f.out=1;f.x=a.x;f.z=a.z;f.y=world.hAt(a.x,a.z)+f.sz;syncFind(f);if(a.by===ME&&carryF===a.n)clearCarryF();return}
  if(a.type==='find_deposit'){const f=world.finds[a.n];if(!f||f.done)return;f.done=1;f.held=0;f.m.visible=false;world.score+=f.pts;$('sc').textContent=world.score;if(a.by===ME){if(carryF===a.n)clearCarryF();toast(`+${f.pts}`);f.type==='trash'?clank():ping()}return}
- if(a.type==='rock_pick'){const q=rk[a.n];q.held=1;go.position.set(0,-50,0);go.scale.setScalar(0);go.updateMatrix();rocks.setMatrixAt(a.n,go.matrix);rocks.instanceMatrix.needsUpdate=true;
+ if(a.type==='rock_pick'){const q=rk[a.n];q.held=a.by;go.position.set(0,-50,0);go.scale.setScalar(0);go.updateMatrix();rocks.setMatrixAt(a.n,go.matrix);rocks.instanceMatrix.needsUpdate=true;
   if(a.by===ME){carry=a.n;carryM.scale.set(q.s*q.w,q.s,q.s*q.w);carryM.material.color.fromArray(rocks.instanceColor.array,a.n*3)}}
  if(a.type==='rock_place'){const q=rk[a.n];q.held=0;q.x=a.x;q.z=a.z;q.y=world.hAt(a.x,a.z)+q.s*.3;setRock(a.n);rocks.instanceMatrix.needsUpdate=true;if(a.by===ME&&carry===a.n)carry=-1;return}
- if(a.type!=='dig')return;world.apply(a);sync();clearGrass(a.x,a.z);settleRocks(a.x,a.z);settleFinds(a.x,a.z);$('dg').textContent=world.digs;const y=world.hAt(a.x,a.z);
+ if(a.type==='mower_grab'){mowerOwner=a.by;if(a.by===ME){mowerHeld=true;mowX=undefined}return}
+ if(a.type==='mower_drop'){mowerOwner=null;mowerTarget=null;mower.position.set(a.x,world.hAt(a.x,a.z),a.z);mower.rotation.y=a.ry;mowerOn=!!a.on;if(a.by===ME)mowerHeld=false;return}
+ if(a.type==='mow'){if(a.by!==ME){let ch=0;for(const ci of a.cells)if(ci>=0&&ci<MG*MG&&!mown[ci]){mown[ci]=1;cutCell(ci);ch=1}if(ch)grass.instanceMatrix.needsUpdate=true}return}
+ if(a.type==='win'){win();return}
+ if(a.type==='new_yard'){const was=state!=='play';newGame(a.seed);state='play';$('hud').style.display='block';sh.visible=true;
+  if(a.by!==ME&&was){if(fallback){paused=false;show(null)}else{paused=true;show('pause')}}return}
+ if(a.type!=='dig')return;world.apply(a);sync();clearGrass(a.x,a.z);settleRocks(a.x,a.z);settleFinds(a.x,a.z);if(a.by!==ME)Net.swing(a.by);sync();clearGrass(a.x,a.z);settleRocks(a.x,a.z);settleFinds(a.x,a.z);$('dg').textContent=world.digs;const y=world.hAt(a.x,a.z);
  for(let i=0;i<18;i++){const px2=a.x+(Math.random()-.5)*.6,pz2=a.z+(Math.random()-.5)*.6,q=digDepth(px2,pz2),dd=q.d-Math.random()*.2;
   spawn(new V3(px2,y+.1,pz2),new V3((Math.random()-.5)*3,2.5+Math.random()*3,(Math.random()-.5)*3),1.6,false,soilMat(dd<.05&&Math.random()<.4?-1:Math.max(0,dd),q.n))}
  if(a.by===ME)thud();if(state!=='play')return;
  for(const s of world.sig.slice(1))if(!s.f&&world.hAt(s.x,s.z)<s.y+s.top+.05){s.f=1;toast(`That's ${KIND[s.kind]} — not the leak. Keep probing.`);nz('lowpass',500,.4,.9);grain(6,.15,'bandpass',2500,6000,.25)}
- if(world.exposed())win()});
+ if(world.exposed()){if(Net.mode==='solo')win();else if(Net.mode==='host')Net.send({type:'win'})}});/* co-op: only the host calls it, so everyone wins together */
 function win(){state='won';geyser=true;nz('bandpass',1800,2.5,.7);sweep('lowpass',400,80,2.5,.6);
  const m=Math.floor(elapsed/60),s=Math.floor(elapsed%60),ft=world.finds.filter(f=>f.done&&f.type==='trash').length,fa=world.finds.filter(f=>f.done&&f.type==='artifact').length;
  $('wt').textContent=`You exposed the burst main in ${world.digs} digs and ${m}:${String(s).padStart(2,'0')}. Water's off — the neighbours will never know. Finds: ${world.score} pts (${ft} trash, ${fa} artifacts).`;
  setTimeout(()=>{if(state==='won'){document.exitPointerLock?.();$('hud').style.display='none';show('win')}},2400)}
 
 /* ---------- input ---------- */
-addEventListener('keydown',e=>{keys[e.code]=true;if(state==='intro'){state='menu';audio();show('menu');return}if(e.code==='KeyF')probe();if(e.code==='KeyE'&&!e.repeat)useE()});
+addEventListener('keydown',e=>{keys[e.code]=true;if(state==='intro'){state='menu';audio();show(menuScr());return}if(e.code==='KeyF')probe();if(e.code==='KeyE'&&!e.repeat)useE()});
 addEventListener('keyup',e=>keys[e.code]=false);addEventListener('contextmenu',e=>e.preventDefault());
-$('intro').addEventListener('click',()=>{if(state==='intro'){state='menu';audio();show('menu')}});
+$('intro').addEventListener('click',()=>{if(state==='intro'){state='menu';audio();show(menuScr())}});
 addEventListener('mousemove',e=>{if(state==='intro'||paused)return;if(locked||(fallback&&dragging)){yaw-=e.movementX*.0022;pitch=Math.max(-1.45,Math.min(1.45,pitch-e.movementY*.0022));moved+=Math.abs(e.movementX)+Math.abs(e.movementY)}});
 addEventListener('mousedown',e=>{if(e.target.closest('button')||state!=='play'||paused)return;if(e.button===2){probe();return}if(e.button!==0)return;if(mowerHeld){mowerOn=!mowerOn;return}holding=true;heldT=0;autoDug=false;if(locked)tryDig();else if(fallback){dragging=true;moved=0}});
 addEventListener('mouseup',e=>{if(e.button!==0)return;if(dragging&&moved<6&&!autoDug)tryDig();dragging=false;holding=false});
 addEventListener('blur',()=>{holding=dragging=false});
 document.addEventListener('pointerlockchange',()=>{locked=document.pointerLockElement===cv;if(!locked&&state==='play'&&!fallback){holding=false;paused=true;show('pause')}});
-$('bSolo').onclick=startPlay;$('bHow').onclick=()=>{$('how').hidden=!$('how').hidden};
+$('bSolo').onclick=()=>startPlay();$('bHow').onclick=()=>{$('how').hidden=!$('how').hidden};
 $('bRes').onclick=()=>{paused=false;show(null);lock()};
-for(const id of['bNew2','bNew3'])$(id).onclick=()=>{if(state==='play'){paused=false;show(null);newGame();if(!fallback)lock()}else startPlay()};
+for(const id of['bNew2','bNew3'])$(id).onclick=()=>{if(Net.mode==='client')return;
+ if(Net.mode==='host'){paused=false;show(null);Net.send({type:'new_yard',seed:rndSeed()});if(!fallback)lock();return}
+ if(state==='play'){paused=false;show(null);newGame();if(!fallback)lock()}else startPlay()};
 for(const id of['bMenu','bMenu2','bMenu3'])$(id).onclick=toMenu;
 
 /* ---------- loop ---------- */
@@ -474,11 +484,16 @@ function play(dt){
  sh.visible=!handsBusy();sh.position.set(.45,-.62-sw*.08+Math.sin(T*1.7)*.004,-.3-sw*.12);sh.rotation.set(-sw*.7,sw*.1,sw*.05);
  /* mower: pushed 1.2 m ahead while held, otherwise it rests on the ground; the engine cuts grass and throws clippings */
  if(mowerHeld){const fx=-Math.sin(yaw),fz=-Math.cos(yaw),mx=px+fx*2.1,mz=pz+fz*2.1;mower.position.set(mx,world.hAt(mx,mz),mz);mower.rotation.y=yaw+Math.PI}
- else mower.position.y+=(world.hAt(mower.position.x,mower.position.z)-mower.position.y)*Math.min(1,dt*10);
- if(mowerOn){const mx=mower.position.x,mz=mower.position.z;if(mowX===undefined){mowX=mx;mowZ=mz}const steps=Math.max(1,Math.ceil(Math.hypot(mx-mowX,mz-mowZ)/.25));
- for(let s=1;s<=steps;s++)mowAt(mowX+(mx-mowX)*s/steps,mowZ+(mz-mowZ)*s/steps,.7);mowX=mx;mowZ=mz;mower.wheels.forEach(w=>w.rotation.x+=dt*18);
+ else{if(mowerOwner&&mowerTarget){/* someone else is pushing it: glide to their last reported spot */
+   const k=Math.min(1,dt*12),m=mower.position;m.x+=(mowerTarget.x-m.x)*k;m.z+=(mowerTarget.z-m.z)*k;let d=mowerTarget.ry-mower.rotation.y;d-=Math.round(d/6.2832)*6.2832;mower.rotation.y+=d*k}
+  mower.position.y+=(world.hAt(mower.position.x,mower.position.z)-mower.position.y)*Math.min(1,dt*10)}
+ if(mowerOn){const mx=mower.position.x,mz=mower.position.z;
+ if(mowerHeld){/* only the owner cuts; everyone else gets the cut cells from the host */
+  if(mowX===undefined){mowX=mx;mowZ=mz}const steps=Math.max(1,Math.ceil(Math.hypot(mx-mowX,mz-mowZ)/.25));
+  for(let s=1;s<=steps;s++)mowAt(mowX+(mx-mowX)*s/steps,mowZ+(mz-mowZ)*s/steps,.7);mowX=mx;mowZ=mz}
+ mower.wheels.forEach(w=>w.rotation.x+=dt*18);
   if(Math.random()<.6)spawn(mower.position.clone().add(new V3((Math.random()-.5)*.6,.3,(Math.random()-.5)*.6)),new V3((Math.random()-.5)*1.2,1+Math.random(),(Math.random()-.5)*1.2),.6,false,soilMat(-1,0))}
- if(AC&&clipM){const on=mowerOn&&state==='play'&&!paused;clipM.gain.gain.setTargetAtTime(on?.05:0,AC.currentTime,.15);clipM.blade.gain.setTargetAtTime(on?.012:0,AC.currentTime,.15)}
+ if(AC&&clipM){const on=mowerOn&&state==='play'&&!paused,att=mowerHeld?1:Math.max(.12,1-Math.hypot(px-mower.position.x,pz-mower.position.z)/18);clipM.gain.gain.setTargetAtTime(on?.05*att:0,AC.currentTime,.15);clipM.blade.gain.setTargetAtTime(on?.012*att:0,AC.currentTime,.15)}
  /* carried rock sits in the hands */
  if(carry>=0){carryM.visible=true;carryM.position.set(.35,-.35,-.7);carryM.rotation.set(rk[carry].a,rk[carry].b+T*.4,rk[carry].c)}else carryM.visible=false;
  if(carryFM){carryFM.position.set(.32,-.36,-.78);carryFM.rotation.set(.45,T*.6,.2)}
@@ -489,7 +504,7 @@ function play(dt){
  if(toastT>0&&(toastT-=dt)<=0)$('toast').style.opacity=0;
 }
 function loop(now){requestAnimationFrame(loop);const dt=Math.min(.05,(now-last)/1000);last=now;T+=dt;
- if(state==='play'||state==='won')play(dt);
+ if(state==='play'||state==='won'){play(dt);Net.tick(dt)}
  else{const a=Math.sin(T*.12)*.9;cam.position.set(Math.sin(a)*17,6.5,Math.cos(a)*17);cam.lookAt(0,0,0)}
  for(let i=rings.length-1;i>=0;i--){const q=rings[i];q.t=Math.min(1,q.t+dt/.9);q.age=(q.age||0)+dt;q.m.scale.setScalar(Math.max(.01,q.r*(1-Math.pow(1-q.t,3))));q.m.material.opacity=Math.max(0,Math.min(1,(12-q.age)/4))*.6;if(q.age>12){scene.remove(q.m);rings.splice(i,1)}}
  if(geyser)for(let k=0;k<4;k++)spawn(new V3(world.burst.x,world.burst.y+.15,world.burst.z),new V3((Math.random()-.5)*1.4,5+Math.random()*3,(Math.random()-.5)*1.4),1.5,true);
