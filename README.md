@@ -19,7 +19,7 @@ A first-person digging game in the browser (three.js r128, no build step). Somet
 | G | Place a garden light where you aim (or pick up the one nearby) |
 | E at the wall socket | Switch the garden lights on / off |
 | E at a cut cable | Splice it (aim at the break). Shovels and a running mower cut cables |
-| F9 / Shift+F9 | Testing only (localhost or `?dev`): +100 / +1000 points |
+| Console `addPoints(n)` | Testing only (localhost or `?dev`): add n points |
 | L | Flashlight (needs the Flashlight upgrade) |
 | Esc | Pause menu (New yard is here) |
 

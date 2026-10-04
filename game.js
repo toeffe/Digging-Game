@@ -22,7 +22,7 @@ let Prog=freshProg(),shopOpen=false,pcMax=2.5,flashOn=false;
 function saveProg(){}/* nothing is kept between yards any more; hook left in place for the callers */
 function renderShop(){$('shopList').innerHTML=UKEY.map((id,i)=>{const u=UPG[id],l=Prog.up[id],mx=l>=u.max,c=upCost(id);return`<li class="${mx?'mx':c>Prog.bank?'no':''}"><b>${i+1}</b> ${u.n} <i>Lv ${l}/${u.max}</i><span>${mx?'MAX':c}</span><small>${u.d}</small></li>`}).join('');$('shopBank').textContent=Prog.bank}
 function setShop(v){shopOpen=v;$('shop').style.display=v?'block':'none';if(v)renderShop()}
-/* testing helpers (F9 = +100 points, Shift+F9 = +1000): only on localhost / file:// or with ?dev in the URL */
+/* testing helper: in the console, addPoints(n) adds n points. Only on localhost / file:// or with ?dev in the URL */
 const DEV=/^(localhost|127\.0\.0\.1|\[::1\]|)$/.test(location.hostname)||/[?&]dev\b/.test(location.search);
 function hudPts(){$('sc').textContent=Prog.bank;if(shopOpen)renderShop();hbShow()}
 class World{
@@ -692,7 +692,6 @@ addEventListener('keydown',e=>{keys[e.code]=true;if(state==='intro'){state='menu
  if(e.code==='KeyL')flashKey();
  if(!shopOpen&&/^(Digit|Numpad)[1-4]$/.test(e.code))hbSelect(+e.code.slice(-1)-1);
  if(e.code==='KeyG'&&state==='play'&&!paused)lampKey();
- if(DEV&&e.code==='F9'&&state==='play'){e.preventDefault();Net.send({type:'bank_add',n:e.shiftKey?1000:100,by:ME})}
  if(shopOpen&&/^(Digit|Numpad)[1-6]$/.test(e.code)){const id=UKEY[+e.code.slice(-1)-1],c=upCost(id);if(c===Infinity)toast(`${UPG[id].n} is maxed out`);else if(c>Prog.bank)toast(`Need ${c} points for ${UPG[id].n}`);else Net.send({type:'buy',id,by:ME})}});
 addEventListener('keyup',e=>keys[e.code]=false);addEventListener('contextmenu',e=>e.preventDefault());
 $('intro').addEventListener('click',()=>{if(state==='intro'){state='menu';audio();show(menuScr())}});
@@ -702,8 +701,7 @@ addEventListener('mouseup',e=>{if(e.button!==0)return;if(dragging&&moved<6&&!aut
 addEventListener('blur',()=>{holding=dragging=false});
 document.addEventListener('pointerlockchange',()=>{locked=document.pointerLockElement===cv;if(!locked&&state==='play'&&!fallback){holding=false;paused=true;setShop(false);show('pause')}});
 /* yard-size selector (menu, co-op lobby, pause, win): one shared choice, remembered */
-if(DEV)$('devHint').textContent=' · DEV: F9 = +100 points (Shift = +1000)';
-window.addPoints=n=>Net.send({type:'bank_add',n:n|0,by:ME});/* console helper, same rules as F9 */
+window.addPoints=n=>Net.send({type:'bank_add',n:n|0,by:ME});/* console only; the host accepts it on localhost or with ?dev */
 const szBtns=[...document.querySelectorAll('.szsel button')],szShow=()=>szBtns.forEach(b=>b.classList.toggle('on',+b.dataset.s===wantSize));
 szBtns.forEach(b=>b.onclick=()=>{wantSize=+b.dataset.s;try{localStorage.setItem('burstSize',wantSize)}catch(e){}szShow();
  if((state==='menu'||state==='intro')&&Net.mode==='solo'&&wantSize!==S)newGame(undefined,wantSize)/* the yard behind the menu follows the choice */});szShow();
