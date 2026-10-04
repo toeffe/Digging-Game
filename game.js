@@ -99,12 +99,44 @@ const brickTex=cvTex(128,128,(x,w,h)=>{x.fillStyle='#4a3a32';x.fillRect(0,0,w,h)
  shingleTex=cvTex(64,64,(x,w,h)=>{x.fillStyle='#d8d8d8';x.fillRect(0,0,w,h);for(let row=0;row<2;row++)for(let c=0;c<2;c++){const v=190+Math.random()*60|0;x.fillStyle=`rgb(${v},${v},${v})`;x.fillRect(row*32+1,c*32+(row?16:0)+1,30,30)}
   x.fillStyle='rgba(0,0,0,.55)';for(let row=0;row<2;row++)x.fillRect(row*32,0,2,h);x.fillStyle='rgba(0,0,0,.3)';for(let row=0;row<2;row++)for(let c=0;c<3;c++)x.fillRect(row*32,(c*32+(row?16:0))%h,32,1);speckle(x,w,h,18)},21,19);
 let PARENT=scene;/* where box/cyl/blob/house put things: the yard, outer-world and house groups are rebuilt or moved when the yard size changes */
-function clearGroup(g){g.traverse(o=>{if(o.geometry)o.geometry.dispose()});g.clear()}
+function clearGroup(g){g.traverse(o=>{if(o.geometry&&!o.geometry.userData.keep)o.geometry.dispose()});g.clear()}
 function box(w,h,d,c,x,y,z,o){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat(c,o));m.position.set(x,y,z);m.castShadow=m.receiveShadow=true;PARENT.add(m);return m}
 function cyl(a,b,h,c,x,y,z,o){const m=new THREE.Mesh(new THREE.CylinderGeometry(a,b,h,14),mat(c,o));m.position.set(x,y,z);m.castShadow=m.receiveShadow=true;PARENT.add(m);return m}
 function blob(r,c,x,y,z,sx=1,sy=1,sz=1){const g=new THREE.SphereGeometry(r,16,12),p=g.attributes.position;
  for(let i=0;i<p.count;i++){const k=1+Math.sin(p.getX(i)*5.1+p.getY(i)*3.7)*Math.cos(p.getZ(i)*4.3)*.17;p.setXYZ(i,p.getX(i)*k,p.getY(i)*k,p.getZ(i)*k)}g.computeVertexNormals();
  const m=new THREE.Mesh(g,mat(c));m.position.set(x,y,z);m.scale.set(sx,sy,sz);m.castShadow=m.receiveShadow=true;PARENT.add(m);return m}
+/* shared crowns: keep=1 so a yard-size rebuild does not dispose them out from under the other group */
+const keepG=g=>{g.userData.keep=1;return g},WALKS=[],
+ leafG=keepG((()=>{const g=new THREE.IcosahedronGeometry(1,2),p=g.attributes.position;
+  for(let i=0;i<p.count;i++){const x=p.getX(i),y=p.getY(i),z=p.getZ(i),k=1+.32*Math.sin(x*3.2+1.7)*Math.cos(z*2.6+y*2.1)+.16*Math.sin(x*5.1-z*4.4+y*1.3);p.setXYZ(i,x*k,y*k*.72,z*k)}
+  g.computeVertexNormals();return g})()),
+ pineG=keepG((()=>{const g=new THREE.LatheGeometry([[.08,1.45],[1.35,2.05],[1.12,2.75],[.22,3.2],[1.02,3.75],[.78,4.5],[.16,4.95],[.58,5.45],[.36,6.15],[.04,6.85],[0,7.4]].map(([r,y])=>new THREE.Vector2(r,y)),11),p=g.attributes.position;
+  for(let i=0;i<p.count;i++){const x=p.getX(i),y=p.getY(i),z=p.getZ(i),rad=Math.hypot(x,z);if(rad<.001)continue;const n=1+.08*Math.sin(Math.atan2(z,x)*5+y*1.4)+.04*Math.cos(y*2.8+x);p.setX(i,x*n);p.setZ(i,z*n)}
+  g.computeVertexNormals();return g})()),
+ LEAF=[0x2d6a2c,0x3a7a30].map(c=>mat(c)),TWIG=mat(0x4d3520);
+function paved(x,z){for(const q of WALKS)if(Math.abs(x-q.x)<q.hw&&Math.abs(z-q.z)<q.hd)return 1}
+/* half-cylinder along X, crown up, flat side on y=0. theta 0..PI bulges +X; rotateZ(PI/2) sends that to +Y */
+function archGeo(r,len){const g=new THREE.CylinderGeometry(r,r,len,24,1,true,0,Math.PI);g.rotateZ(Math.PI/2);
+ const p=g.attributes.position;let y=0;for(let i=0;i<p.count;i++)y=Math.max(y,p.getY(i));if(y<r*.5)g.rotateX(Math.PI);return g}
+/* ridge along local X, slopes along Z. eave continues past the wall top so the gable meets the underside */
+function gable(w,d,h,rise,col,wall){const ov=.55,th=.14,hd=d/2,run=hd+ov,pitch=Math.atan2(rise,hd),drop=rise*run/hd,eave=h+rise-drop,sl=Math.hypot(run,drop),
+ tx=shingleTex.clone();tx.repeat.set((w+ov*2)/.5,sl/.5);tx.needsUpdate=true;
+ const G=new THREE.Group(),sm=mat(col,{map:tx,roughness:.85}),gm=mat(wall,{map:siding,roughness:.9,side:THREE.DoubleSide}),fm=mat(0x3e3834,{roughness:.8}),
+  add=(m,x,y,z)=>{m.position.set(x,y,z);m.castShadow=m.receiveShadow=true;G.add(m);return m},cy=Math.cos(pitch),sy=Math.sin(pitch);
+ for(const s of[-1,1]){const m=add(new THREE.Mesh(new THREE.BoxGeometry(w+ov*2,th,sl),sm),0,eave+drop/2+cy*th/2,s*(run/2+sy*th/2));m.rotation.x=s*pitch;
+  add(new THREE.Mesh(new THREE.BoxGeometry(w+ov*2+.06,.22,.07),fm),0,eave+.02,s*(run+.04))}
+ const gg=new THREE.BufferGeometry();gg.setAttribute('position',new THREE.BufferAttribute(new Float32Array([0,h,-hd,0,h,hd,0,h+rise,0]),3));
+ gg.setAttribute('uv',new THREE.BufferAttribute(new Float32Array([0,0,1,0,.5,1]),2));gg.computeVertexNormals();
+ for(const s of[-1,1])add(new THREE.Mesh(gg,gm),s*(w/2+.02),0,0);
+ add(new THREE.Mesh(new THREE.BoxGeometry(w+ov*2+.1,.12,.36),sm),0,h+rise+.09,0);return G}
+function foliageTree(x,z,s){cyl(.18*s,.34*s,2.35*s,0x4d3520,x,1.175*s,z);
+ /* base of the cylinder sits on the trunk; the tip rotates up and out, not down through the ground */
+ const limb=(dx,dy,dz,len)=>{const g=new THREE.CylinderGeometry(.035*s,.07*s,len*s,7);g.translate(0,len*s/2,0);
+  const m=new THREE.Mesh(g,TWIG),dir=new V3(dx,.95,dz).normalize();m.quaternion.setFromUnitVectors(new V3(0,1,0),dir);
+  m.position.set(x+dir.x*.16*s,dy*s,z+dir.z*.16*s);m.castShadow=m.receiveShadow=true;PARENT.add(m)};
+ limb(.62,1.55,.14,1.05);limb(-.58,1.62,-.2,1);limb(.08,1.72,-.55,.9);
+ [[0,3.15,.06,1.22,.5],[.58,2.82,-.26,.96,1.4],[-.55,2.9,.3,1.02,2.3]].forEach(([a,b,c,q,ry],i)=>{
+  const m=new THREE.Mesh(leafG,LEAF[i&1]);m.position.set(x+a*s,b*s,z+c*s);m.scale.setScalar(q*s);m.rotation.y=ry;m.castShadow=m.receiveShadow=true;PARENT.add(m)})}
 /* ---------- hedges & gardens: neighbour lots + a tall perimeter hedge that closes in the neighbourhood ---------- */
 const HD={n:0,r:rng(21)},HY=new V3(0,1,0),
  HFP0=[[0,-12.5,0,14,5],[-27,-9,1.5708,9,7],[-27,14,1.5708,8,6],[28,-8,-1.5708,10,7],[28,15,-1.5708,8,6.5],[-32,47,3.1416,10,7],[0,49,3.1416,11,7],[34,47,3.1416,9,7]],/* house footprints x,z,rot,w,d at the 20 m size */
@@ -121,10 +153,9 @@ function hedgeLine(x0,z0,x1,z1,h,w,gap){const L=Math.hypot(x1-x0,z1-z0),n=Math.m
 /* lot around a house at (cx,cz) rotated ry, house size w x d; front (door side) is local +z */
 function lot(cx,cz,ry,w,d){const W=(lx,lz)=>{const v=new V3(lx,0,lz).applyAxisAngle(HY,ry);return[cx+v.x,cz+v.z]},hw=w/2+3,bk=-d/2-3,fr=d/2+5.5,gp=W(0,fr),
   L=(a,b,c,e,h,wd,g)=>{const p=W(a,b),q=W(c,e);hedgeLine(p[0],p[1],q[0],q[1],h,wd,g)};
- L(-hw,bk,hw,bk,1.7,1.1);L(hw,bk,hw,fr,1.7,1.1);L(-hw,fr,-hw,bk,1.7,1.1);L(-hw,fr,hw,fr,.75,.8,[gp[0],gp[1],1.4]);
- for(let z=d/2+.9;z<fr-.3;z+=.95){const p=W(0,z);box(1.3,.07,.6,0x9c9a92,p[0],oh(p[0],p[1])+.03,p[1]).rotation.y=ry}
-}
-function perimeter(){const a=-52-DEL,b=52+DEL,c=-34,e=62+DEL;hedgeLine(a,c,b,c,3.8,1.9);hedgeLine(b,c,b,e,3.8,1.9);hedgeLine(b,e,a,e,3.8,1.9);hedgeLine(a,e,a,c,3.8,1.9)}
+ L(-hw,bk,hw,bk,1.7,1.1);L(hw,bk,hw,fr,1.7,1.1);L(-hw,fr,-hw,bk,1.7,1.1);L(-hw,fr,hw,fr,.75,.8,[gp[0],gp[1],1.4])}
+function perimeter(){const a=-52-DEL,b=52+DEL,c=-34,e=62+DEL,sz=30+DEL,g=9.5;
+ hedgeLine(a,c,b,c,3.8,1.9);hedgeLine(b,c,b,sz-g,3.8,1.9);hedgeLine(b,sz+g,b,e,3.8,1.9);hedgeLine(b,e,a,e,3.8,1.9);hedgeLine(a,e,a,sz+g,3.8,1.9);hedgeLine(a,sz-g,a,c,3.8,1.9)}
 const yardG=new THREE.Group(),houseG=new THREE.Group(),outerG=new THREE.Group();scene.add(yardG,houseG,outerG);/* yard (rebuilt per size), house (built once, moved back by DEL), outer world (rebuilt per size) */
 function buildFence(){/* picket fence on all four sides; the house closes the fourth, so only the stretches either side of it are fenced */
  const cap=Math.ceil((S+.2)/.26)*3+Math.ceil((YH-6.8)/.26)*2+8,im=new THREE.InstancedMesh(new THREE.BoxGeometry(.2,1.3,.05),mat(0xffffff,{map:wood}),cap),o=new THREE.Object3D();let n=0;
@@ -138,8 +169,8 @@ function buildFence(){/* picket fence on all four sides; the house closes the fo
 {PARENT=houseG;
  /* house */
  box(14,5,5,0xffffff,0,2.5,-12.5,{map:siding});
- const rg=new THREE.CylinderGeometry(1,1,15.4,3).rotateZ(Math.PI/2).rotateX(-Math.PI/2),rf=new THREE.Mesh(rg,mat(0x7a4636,{map:shingleTex,roughness:.85}));rf.scale.set(1,2.3,6.2);rf.position.set(0,6.1,-12.6);rf.castShadow=true;PARENT.add(rf);
- box(1,2.2,1,0xffffff,4.5,6.8,-12.5,{map:brickTex,roughness:.95});box(1.25,.16,1.25,0x8a8580,4.5,7.95,-12.5);box(14.2,.18,.3,0xe6e0d4,0,5,-9.9);box(14.2,.1,.14,0x8a8f94,0,4.82,-9.82,{roughness:.4,metalness:.5});
+ const rf=gable(14,5,5,2.1,0x7a4636,0xffffff);rf.position.set(0,0,-12.5);PARENT.add(rf);
+ box(1,2.2,1,0xffffff,4.5,6.8,-12.5,{map:brickTex,roughness:.95});box(1.25,.16,1.25,0x8a8580,4.5,7.95,-12.5);box(15.2,.16,.22,0xe6e0d4,0,4.38,-9.42);box(15.2,.07,.1,0x8a8f94,0,4.26,-9.36,{roughness:.4,metalness:.5});
  /* foundation (split around the door), corner boards */
  for(const fx of[-4,4])box(6.2,.4,5.2,0x77716a,fx,.2,-12.5,{roughness:1});
  for(const cx of[-7,7])box(.22,5,.22,0xf5f0e4,cx,2.5,-9.98);
@@ -171,8 +202,7 @@ function buildFence(){/* picket fence on all four sides; the house closes the fo
 PARENT=scene;const G0=GLASS.length,L0=LAMPS.length;/* house windows and bench bulb; the outer world adds more after these and is rebuilt per size */
 function buildYard(){clearGroup(yardG);PARENT=yardG;obst.length=0;obst.push({x:BENCH[0],z:BENCH[1],r:.95});buildFence();
  /* trees + bin: soil around them is held by roots (see PROT in World), so they never float or sink */
- TREES.forEach(([x,z,s])=>{cyl(.16*s,.3*s,2.4*s,0x4d3520,x,1.2*s,z);
-  [[0,3.3,0,1.5],[.8,4,-.3,1.1],[-.8,3.9,.4,1.15],[.2,4.6,.1,.95],[0,3,.9,1],[-.3,3.2,-.9,1]].forEach(([a,b,c,r],i)=>blob(r*s,i%2?0x3a7a30:0x2d6a2c,x+a*s,b*s,z+c*s));obst.push({x,z,r:.5*s})});
+ TREES.forEach(([x,z,s])=>{foliageTree(x,z,s);obst.push({x,z,r:.5*s})});
  const rb=rng(7),nb=Math.round(14*YH/10),st=2*(YH-1)/(nb-1),bx=YH-.7;for(let k=0;k<nb;k++){const t=-(YH-1)+k*st;[[bx,t],[-bx,t],[t,bx]].forEach(([x,z])=>{if(rb()<.5){const s=.5+rb()*.5,c=rb()<.5;if(Math.hypot(x-CRATE[0],z-CRATE[1])>1.35)blob(s,c?0x2d6a2b:0x3d8036,x,s*.7,z,1.2,.85,1.2)}})}
  cyl(.35,.3,.9,0x6b7378,BIN[0],.45,BIN[1],{roughness:.5,metalness:.3});cyl(.38,.38,.08,0x4c5358,BIN[0],.92,BIN[1]);
  /* open crate for artifacts, facing the yard */
@@ -185,10 +215,11 @@ function buildYard(){clearGroup(yardG);PARENT=yardG;obst.length=0;obst.push({x:B
  obst.push({x:cx,z:cz,r:.7});PARENT=scene}
 
 /* ---------- surrounding world: hills, street, neighbours, forest ---------- */
-function oh(x,z){const r=Math.hypot(x,z),m=Math.min(1,Math.max(0,(r-55)/80)),n=Math.sin(x*.021+1.3)*Math.cos(z*.017+.4)+.5*Math.sin(x*.05+z*.043)+.25*Math.sin(x*.11-z*.09);return m*m*(3-2*m)*(9+24*(.5+.2*n))}
+function oh(x,z){const r=Math.hypot(x,z),m=Math.min(1,Math.max(0,(r-55)/80)),n=Math.sin(x*.021+1.3)*Math.cos(z*.017+.4)+.5*Math.sin(x*.05+z*.043)+.25*Math.sin(x*.11-z*.09);
+ let h=m*m*(3-2*m)*(9+24*(.5+.2*n));const sz=30+DEL,edge=52+DEL,band=Math.min(1,Math.max(0,(Math.abs(z-sz)-7)/10)),end=Math.min(1,Math.max(0,(Math.abs(x)-(edge+4))/14));return h*Math.max(band,end)}
 function house(x,z,ry,w,d,h,wc,rc,y=0){const G=new THREE.Group();G.position.set(x,y,z);G.rotation.y=ry;PARENT.add(G);
  const A=(m,a,b,c)=>{m.position.set(a,b,c);m.castShadow=m.receiveShadow=true;G.add(m);return m},B=(w2,h2,d2,c,o)=>new THREE.Mesh(new THREE.BoxGeometry(w2,h2,d2),mat(c,o));
- A(B(w,h,d,wc,{map:siding}),0,h/2,0);const rise=h*.4,rf=A(new THREE.Mesh(new THREE.CylinderGeometry(1,1,w+.8,3).rotateZ(Math.PI/2).rotateX(-Math.PI/2),mat(rc,{roughness:.8})),0,h+.5*rise,0);rf.scale.set(1,rise,(d/2+.45)/.87);
+ A(B(w,h,d,wc,{map:siding}),0,h/2,0);const rise=h*.4;G.add(gable(w,d,h,rise,rc,wc));
  for(const i of[-1,1]){A(B(w*.2,h*.3,.12,0xf2efe8),i*w*.27,h*.6,d/2+.02);lit(A(B(w*.17,h*.26,.14,0x2d4a63,{roughness:.15,metalness:.4}),i*w*.27,h*.6,d/2+.03).material)}
  A(B(1,2.1,.14,0x5a3a22),0,1.05,d/2+.03);A(B(.8,rise*1.5,.8,0x8a5a48),w*.3,h+rise*.9,0)}
 function buildOuter(){clearGroup(outerG);PARENT=outerG;HD.n=0;HD.r=rng(21);GLASS.length=G0;LAMPS.length=L0;
@@ -205,22 +236,42 @@ function buildOuter(){clearGroup(outerG);PARENT=outerG;HD.n=0;HD.r=rng(21);GLASS
  const HS=[[-27,-9,1.5708,9,7,4.2,0x9fb3c4,0x5a3a32],[-27,14,1.5708,8,6,4,0xd8c39a,0x3d3d44],[28,-8,-1.5708,10,7,4.4,0xc9877a,0x4a4a50],[28,15,-1.5708,8,6.5,4,0x9db08c,0x6a3b2e],[-32,47,3.1416,10,7,4.2,0xe0d6bf,0x55402f],[0,49,3.1416,11,7,4.6,0x8fa3b8,0x3f3f46],[34,47,3.1416,9,7,4.2,0xb98a6c,0x4a3a35]].map((a,i)=>[a[0]+HOFF[i+1][0]*DEL,a[1]+HOFF[i+1][1]*DEL,...a.slice(2)]);
  HS.forEach(a=>house(...a));HS.forEach(a=>lot(a[0],a[1],a[2],a[3],a[4]));perimeter();
  house(-80,-58,.6,12,9,6,0x8c2f2a,0x44464a,oh(-80,-58));const sy=oh(-66,-52);cyl(2.2,2.2,10,0xb7bdc2,-66,sy+5,-52,{metalness:.3,roughness:.5});const cap=new THREE.Mesh(new THREE.ConeGeometry(2.4,2,14),mat(0x6d737a));cap.position.set(-66,sy+11,-52);PARENT.add(cap);
- const tree=(x,z,s)=>{cyl(.16*s,.3*s,2.4*s,0x4d3520,x,1.2*s,z);[[0,3.3,0,1.5],[.8,4,-.3,1.1],[-.8,3.9,.4,1.15],[.2,4.6,.1,.95]].forEach(([a,b,c,q],i)=>blob(q*s,i%2?0x3a7a30:0x2d6a2c,x+a*s,b*s,z+c*s))};
- [[-22,2,1.2,-1,0],[22,2,1.1,1,0],[-23,-20,1.3,-1,0],[24,-19,1.2,1,0],[-22,25,1,-1,1],[23,26,1.1,1,1]].forEach(a=>tree(a[0]+a[3]*DEL,a[1]+a[4]*DEL,a[2]));
- /* street, sidewalks, lamps and the parked car sit DEL further out */
- const sz=30+DEL;
- box(104,.05,8,0x3a3a3f,0,.025,sz,{roughness:.95});for(let k=0;k<14;k++)box(2.5,.06,.2,0xe8e0a0,-46+k*7.1,.04,sz);box(104,.12,2,0xb8b5ac,0,.06,sz-4.5);box(104,.12,2,0xb8b5ac,0,.06,sz+4.5);
+ [[-22,2,1.2,-1,0],[22,2,1.1,1,0],[-23,-20,1.3,-1,0],[24,-19,1.2,1,0],[-22,18,1,-1,1],[23,19,1.1,1,1]].forEach(a=>foliageTree(a[0]+a[3]*DEL,a[1]+a[4]*DEL,a[2]));
+ /* street runs to the hedge; a portal at each end takes it out of the neighbourhood */
+ const sz=30+DEL,edge=52+DEL,len=edge*2;
+ box(len,.05,8,0x3a3a3f,0,.025,sz,{roughness:.95});
+ const step=7.2,nd=Math.floor((len-16)/step),x0=-(nd*step)/2;for(let k=0;k<=nd;k++)box(2.5,.06,.2,0xe8e0a0,x0+k*step,.04,sz);
+ box(len,.12,2,0xb8b5ac,0,.06,sz-4.5);box(len,.12,2,0xb8b5ac,0,.06,sz+4.5);
  for(let k=-2;k<=2;k++){const x=k*18;cyl(.1,.14,8,0x5a4a3a,x+9,4,sz+6.8);box(2.2,.12,.12,0x5a4a3a,x+9,7.6,sz+6.8);cyl(.06,.08,5,0x333840,x,2.5,sz-5.4);box(.7,.12,.3,0x333840,x+.3,5,sz-5.4);
   const lm=new THREE.Mesh(new THREE.SphereGeometry(.12,8,6),new THREE.MeshBasicMaterial({color:new THREE.Color(5,4,2.4)}));lm.position.set(x+.4,4.9,sz-5.4);PARENT.add(lm);LAMPS.push(lm.material)}
  box(4.2,.7,1.8,0xa83232,-14,.65,sz-1.7,{roughness:.35,metalness:.5});box(2.2,.6,1.6,0x23303a,-14.3,1.28,sz-1.7,{roughness:.1,metalness:.6});
  for(const dx of[-1.4,1.4])for(const dz of[-.9,.9])cyl(.36,.36,.25,0x111111,-14+dx,.36,sz-1.7+dz).rotation.x=Math.PI/2;
+ for(const s of[-1,1]){const x=s*edge,R=6.6,cmat=mat(0x8e928c,{roughness:.82,side:THREE.DoubleSide}),dk=new THREE.MeshBasicMaterial({color:0x050607,side:THREE.DoubleSide}),
+  put=(g,px,mt)=>{const m=new THREE.Mesh(g,mt);m.position.set(px,0,sz);m.castShadow=m.receiveShadow=mt!==dk;PARENT.add(m);return m};
+  put(archGeo(R+.28,5.8),x+s*2.9,cmat);put(archGeo(R+.55,.75),x+s*.2,cmat);
+  put(archGeo(R,5.2),x+s*3.05,dk);
+  const cap=new THREE.Mesh(new THREE.CircleGeometry(R,24,0,Math.PI),dk);cap.rotation.y=s>0?-Math.PI/2:Math.PI/2;cap.position.set(x+s*5.35,0,sz);PARENT.add(cap);
+  box(1.1,2.4,.7,0x8e928c,x+s*.35,1.2,sz-(R+.15));box(1.1,2.4,.7,0x8e928c,x+s*.35,1.2,sz+(R+.15));
+  box(4.6,.05,8,0x2a2a2e,x+s*2.5,.025,sz,{roughness:1});box(4.6,.1,2,0x9c998f,x+s*2.5,.05,sz-4.5);box(4.6,.1,2,0x9c998f,x+s*2.5,.05,sz+4.5)}
+ /* door walks tuck under the sidewalks (slightly lower) so the join does not z-fight */
+ WALKS.length=0;const pave=(w,d,x,z,main)=>{const h=main?.12:.1;box(w,h,d,0xb8b5ac,x,h/2,z);WALKS.push({x,z,hw:w/2+.25,hd:d/2+.25})},
+  at=(cx,cz,ry,lx,lz)=>{const v=new V3(lx,0,lz).applyAxisAngle(HY,ry);return[cx+v.x,cz+v.z]},lamps=[-36,-18,0,18,36],
+  nudge=(x,dir)=>{let p=x;for(const lx of lamps)if(Math.abs(p-lx)<1.5)p=lx+dir*1.55;return p},west=[],east=[],north=[];
+ for(const a of HS){const f=new V3(0,0,1).applyAxisAngle(HY,a[2]);if(f.z<-.5)north.push(a);else if(f.x>.5)west.push(a);else east.push(a)}
+ for(const[cx,cz,ry,,d]of north){const[dx,dz]=at(cx,cz,ry,0,d/2),zEnd=sz+5.5-.2;pave(1.2,Math.abs(dz-zEnd),dx,(dz+zEnd)/2)}
+ const side=(list,dir)=>{if(!list.length)return;let hx=dir>0?-1e9:1e9,zs=1e9;
+  for(const[cx,cz,ry,,d]of list){const[fx]=at(cx,cz,ry,0,d/2+8.1);hx=dir>0?Math.max(hx,fx):Math.min(hx,fx);zs=Math.min(zs,cz)}
+  hx=nudge(hx,dir);const zEnd=sz-5.5,z0=zs-.8;pave(2,zEnd-z0,hx,(zEnd+z0)/2,1);
+  for(const[cx,cz,ry,,d]of list){const[dx,dz]=at(cx,cz,ry,0,d/2);pave(Math.abs(hx-dx),1.2,(hx+dx)/2,dz)}};
+ side(west,1);side(east,-1);
  const TN=460,RC=150,o=new THREE.Object3D(),cc=new THREE.Color(),bad=(x,z)=>HS.some(a=>Math.hypot(x-a[0],z-a[1])<13)||(Math.abs(z-sz)<8&&Math.abs(x)<58+DEL)||Math.hypot(x+78,z+58)<16||Math.hypot(x,z)<46||Math.abs(Math.max(Math.abs(x)-52-DEL,Math.abs(z-14-DEL/2)-48-DEL/2))<5;
- const TK=new THREE.InstancedMesh(new THREE.CylinderGeometry(.2,.3,2.4,6).translate(0,1.2,0),mat(0x4d3520),TN+RC),C1=new THREE.InstancedMesh(new THREE.ConeGeometry(1.7,4.4,8).translate(0,3.8,0),mat(0xffffff),TN),C2=new THREE.InstancedMesh(new THREE.ConeGeometry(1.2,3.4,8).translate(0,6,0),mat(0xffffff),TN),CR=new THREE.InstancedMesh(new THREE.SphereGeometry(2,10,8).translate(0,4.6,0),mat(0xffffff),RC);
+ const TK=new THREE.InstancedMesh(new THREE.CylinderGeometry(.2,.3,2.4,6).translate(0,1.2,0),mat(0x4d3520),TN+RC),PN=new THREE.InstancedMesh(pineG,mat(0xffffff),TN),
+  crown=leafG.clone();crown.scale(2.2,2.8,2.2);crown.translate(0,4.4,0);const CR=new THREE.InstancedMesh(crown,mat(0xffffff),RC);
  for(let i=0;i<TN+RC;i++){let x,z,t=0;do{const a=r()*6.283,d=46+Math.pow(r(),.8)*90;x=Math.cos(a)*d;z=Math.sin(a)*d}while(bad(x,z)&&t++<30);const sc=1+r()*1.2;
   o.position.set(x,oh(x,z)-.15,z);o.rotation.set(0,r()*6,0);o.scale.setScalar(sc);o.updateMatrix();TK.setMatrixAt(i,o.matrix);
-  if(i<TN){C1.setMatrixAt(i,o.matrix);C2.setMatrixAt(i,o.matrix);const h=.3+r()*.05,l=.12+r()*.1;C1.setColorAt(i,cc.setHSL(h,.5,l).convertSRGBToLinear());C2.setColorAt(i,cc.setHSL(h,.5,l+.04).convertSRGBToLinear())}
+  if(i<TN){PN.setMatrixAt(i,o.matrix);const h=.3+r()*.05,l=.12+r()*.1;PN.setColorAt(i,cc.setHSL(h,.5,l).convertSRGBToLinear())}
   else{CR.setMatrixAt(i-TN,o.matrix);CR.setColorAt(i-TN,cc.setHSL(r()<.3?.1+r()*.05:.25+r()*.07,.55,.2+r()*.1).convertSRGBToLinear())}}
- [TK,C1,C2,CR].forEach(m=>{m.instanceMatrix.needsUpdate=true;if(m.instanceColor)m.instanceColor.needsUpdate=true;m.frustumCulled=false;PARENT.add(m)});buildOuterGrass();PARENT=scene}
+ [TK,PN,CR].forEach(m=>{m.instanceMatrix.needsUpdate=true;if(m.instanceColor)m.instanceColor.needsUpdate=true;m.frustumCulled=false;PARENT.add(m)});buildOuterGrass();PARENT=scene}
 
 /* ---------- terrain ---------- */
 let tg,pos,col,NZ;/* rebuilt by buildTerrain() whenever the yard size changes */
@@ -269,14 +320,14 @@ function isMown(x,z){for(let j=-2;j<=2;j++)for(let i=-2;i<=2;i++){const cx=x+i*M
 /* static grass beyond the fence so the surroundings match the lawn; thins out with distance */
 function buildOuterGrass(){{const B=2*(YH+13.5),ON=Math.round(40000*(27*YH+182)/452),og=new THREE.InstancedMesh(gg,grass.material,ON),r=rng(5);og.receiveShadow=true;og.frustumCulled=false;
  for(let n=0;n<ON;){const x=(r()-.5)*B,z=(r()-.5)*B,d=Math.max(Math.abs(x),Math.abs(z));
-  if(d<YH+.4||(Math.abs(x)<7.8&&z<-(YH-.2)&&z>-(YH+5.4))||r()>Math.exp(-(d-YH)/8))continue;
+  if(d<YH+.4||(Math.abs(x)<7.8&&z<-(YH-.2)&&z>-(YH+5.4))||paved(x,z)||r()>Math.exp(-(d-YH)/8))continue;
   const s=.8+r()*1;go.position.set(x,-.02,z);go.rotation.set((r()-.5)*.5,r()*6,(r()-.5)*.5);go.scale.set(1.9,s,1.9);go.updateMatrix();og.setMatrixAt(n,go.matrix);og.setColorAt(n,gc.setHSL(.22+r()*.06,.55,.28+r()*.18).convertSRGBToLinear());n++}
  og.instanceMatrix.needsUpdate=og.instanceColor.needsUpdate=true;PARENT.add(og)}
 /* far lawn: cheap 3-triangle tufts out to the hedge line, skipping the street, house footprints and front paths */
 {const FN=Math.round(70000*(102+2*DEL)*(94+DEL)/9588),fg=new THREE.ConeGeometry(.05,.42,3,1,true).translate(0,.21,0),fa=fg.attributes.position,fc=new Float32Array(fa.count*3);
  for(let i=0;i<fa.count;i++)fc.fill(.2+.8*Math.min(1,fa.getY(i)/.42),i*3,i*3+3);fg.setAttribute('color',new THREE.BufferAttribute(fc,3));
  const fm=new THREE.InstancedMesh(fg,grass.material,FN),r=rng(6),Y=new V3(0,1,0),v=new V3();fm.receiveShadow=true;fm.frustumCulled=false;
- const blocked=(x,z)=>{if(z>23.8+DEL&&z<37.8+DEL)return true;for(const[cx,cz,ry,w,d]of HFP){v.set(x-cx,0,z-cz).applyAxisAngle(Y,-ry);if((Math.abs(v.x)<w/2+1.2&&v.z>-d/2-1.2&&v.z<d/2+1.2)||(Math.abs(v.x)<.9&&v.z>0&&v.z<d/2+5.8))return true}return false};
+ const blocked=(x,z)=>{if(z>23.8+DEL&&z<37.8+DEL||paved(x,z))return true;for(const[cx,cz,ry,w,d]of HFP){v.set(x-cx,0,z-cz).applyAxisAngle(Y,-ry);if(Math.abs(v.x)<w/2+1.2&&v.z>-d/2-1.2&&v.z<d/2+1.2)return true}return false};
  for(let n=0;n<FN;){const x=-(51+DEL)+r()*(102+2*DEL),z=-33+r()*(94+DEL);if(Math.max(Math.abs(x),Math.abs(z))<YH+12||blocked(x,z))continue;
   const s=.8+r()*.9;go.position.set(x,oh(x,z)-.02,z);go.rotation.set((r()-.5)*.4,r()*6,(r()-.5)*.4);go.scale.set(1.2+r()*.8,s,1.2+r()*.8);go.updateMatrix();fm.setMatrixAt(n,go.matrix);
   fm.setColorAt(n,gc.setHSL(.21+r()*.07,.55,.24+r()*.16).convertSRGBToLinear());n++}
