@@ -442,7 +442,7 @@ const pg=new THREE.IcosahedronGeometry(.07,0),waterM=new THREE.MeshBasicMaterial
 function soilMat(d,n){const gr=d<0;if(!gr)soilRGB(d,n);const sh=.8+.35*Math.random(),r=gr?.2:SC[0],g=gr?.42:SC[1],b=gr?.12:SC[2],key=gr?'g'+(Math.random()*3|0):[r,g,b].map(v=>Math.round(v*sh*12)).join();
  return pmc[key]||(pmc[key]=new THREE.MeshStandardMaterial({color:new THREE.Color(L2(r*sh*.8),L2(g*sh*.8),L2(b*sh*.8)),roughness:1}))}
 function digDepth(x,z){const k=Math.max(0,Math.min(N,Math.round((z+S/2)/C)))*(N+1)+Math.max(0,Math.min(N,Math.round((x+S/2)/C)));return{d:world.B[k]-world.H[k],n:NZ[k]}}
-function spawn(p,v,life,w,sm){if(parts.length>520)return;const m=new THREE.Mesh(pg,w?waterM:sm);m.scale.setScalar(w?.7:.6+Math.random()*1.1);m.position.copy(p);m.castShadow=!w;scene.add(m);parts.push({m,v,life,w})}
+function spawn(p,v,life,w,sm,sc){if(parts.length>520)return;const m=new THREE.Mesh(pg,w?waterM:sm);m.scale.setScalar(sc!=null?sc:(w?.7:.6+Math.random()*1.1));m.position.copy(p);m.castShadow=!w;scene.add(m);parts.push({m,v,life,w})}
 function stepParts(dt){for(let i=parts.length-1;i>=0;i--){const q=parts[i],P=q.m.position;q.life-=dt;q.v.y-=(q.w?7:11)*dt;P.addScaledVector(q.v,dt);
  const g=world.hAt(P.x,P.z);if(P.y<g&&!q.w){P.y=g;q.v.set(0,0,0)}if(q.life<=0||(q.w&&P.y<g)){scene.remove(q.m);parts.splice(i,1)}}}
 
@@ -751,7 +751,7 @@ function play(dt){
   if(mowX===undefined){mowX=mx;mowZ=mz}const steps=Math.max(1,Math.ceil(Math.hypot(mx-mowX,mz-mowZ)/.25));
   for(let s=1;s<=steps;s++)mowAt(mowX+(mx-mowX)*s/steps,mowZ+(mz-mowZ)*s/steps,MRAD[Prog.up.mower]);mowX=mx;mowZ=mz}
  mower.wheels.forEach(w=>w.rotation.x+=dt*18);
-  if(Math.random()<.6)spawn(mower.position.clone().add(new V3((Math.random()-.5)*.6,.3,(Math.random()-.5)*.6)),new V3((Math.random()-.5)*1.2,1+Math.random(),(Math.random()-.5)*1.2),.6,false,soilMat(-1,0))}
+  if(Math.random()<.6)spawn(mower.position.clone().add(new V3((Math.random()-.5)*.6,.3,(Math.random()-.5)*.6)),new V3((Math.random()-.5)*1.2,1+Math.random(),(Math.random()-.5)*1.2),.6,false,soilMat(-1,0),.2+Math.random()*.15)}
  if(AC&&clipM){const on=mowerOn&&state==='play'&&!paused,att=mowerHeld?1:Math.max(.12,1-Math.hypot(px-mower.position.x,pz-mower.position.z)/18);clipM.gain.gain.setTargetAtTime(on?.05*att:0,AC.currentTime,.15);clipM.blade.gain.setTargetAtTime(on?.012*att:0,AC.currentTime,.15)}
  /* carried rock sits in the hands */
  if(carry>=0){carryM.visible=true;carryM.position.set(.35,-.35,-.7);carryM.rotation.set(rk[carry].a,rk[carry].b+T*.4,rk[carry].c)}else carryM.visible=false;
