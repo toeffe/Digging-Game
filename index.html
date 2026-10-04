@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>BURST — Find the Pipe</title>
+<meta name="description" content="BURST: a first-person digging game. Something under the lawn is leaking. Probe the yard, dig with a shovel and find the burst pipe before the basement floods.">
+<meta name="theme-color" content="#1b1410">
+<meta property="og:title" content="BURST — Find the Pipe">
+<meta property="og:description" content="Probe the yard, dig deep, find the leaking main.">
+<meta property="og:type" content="website">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="c"></canvas><div id="vig"></div>
+<div id="intro" class="scr show"><div class="kick">A backyard emergency</div><h1>BURST</h1><p>Something under the lawn is leaking. Find it before the basement floods.</p><div class="blink">Click or press any key</div></div>
+<div id="menu" class="scr"><h2>BURST</h2><button id="bSolo">Single player</button><button disabled>Multiplayer — coming soon</button><button id="bHow">How to play</button><p id="how" hidden>The yard hides five buried things — and only one is the leaking main. Fire your ground probe (F or right-click): it reports the distance and depth of the nearest object and draws a ring on the lawn. Probe from several spots and look where rings cross. Dig there — soil slides, so deep holes must be wide. Old tanks and lines are decoys. Rings fade after a few seconds. Only when you're deep in a hole right next to the leak will you hear a faint hiss.</p></div>
+<div id="help" class="scr"><h2>CONTROLS</h2><ul><li><b>Mouse</b>look around</li><li><b>Click / hold left</b>dig</li><li><b>F / right-click</b>ground probe</li><li><b>W A S D</b>walk (Shift to sprint)</li><li><b>Q / E</b>turn · <b>Esc</b> pause</li></ul><p style="font-size:13px;opacity:.7">If the mouse doesn't capture, drag to look and click to dig.</p><button id="bGot">Got it — start digging</button></div>
+<div id="pause" class="scr"><h2>PAUSED</h2><button id="bRes">Resume</button><button id="bNew2">New yard</button><button id="bMenu2">Main menu</button></div>
+<div id="win" class="scr"><h2>PIPE FOUND!</h2><p id="wt"></p><button id="bNew3">New yard</button><button id="bMenu3">Main menu</button></div>
+<div id="hud"><div id="stat">Digs <b id="dg">0</b> · <b id="tm">0:00</b></div><div id="btns"><button id="bMenu">Menu</button></div><div id="cross"></div><div id="toast"></div><div id="sig"><span id="pr">Probe ready — press F</span><div class="bar"><i id="sf"></i></div></div></div>
+<script src="lib/three.min.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
