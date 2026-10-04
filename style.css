@@ -20,7 +20,8 @@ button:hover:not(:disabled){background:var(--ac);color:#1b1410}button:disabled{o
 #cdf{position:absolute;inset:0 0 auto;height:0;background:#0a0806cc;pointer-events:none;z-index:1}.hb{overflow:hidden}
 #help ul{list-style:none;padding:0;margin:6px 0 10px;text-align:left;line-height:1.9;font-size:17px}#help b{display:inline-block;min-width:150px;color:var(--ac)}
 .row{display:flex;gap:8px}.row button{min-width:0}
-#code{font:inherit;font-size:18px;width:130px;padding:12px;text-align:center;letter-spacing:.3em;text-transform:uppercase;background:#2d2118;color:var(--fg);border:2px solid var(--ac);border-radius:6px}
+#code,#pname{font:inherit;font-size:18px;padding:12px;text-align:center;background:#2d2118;color:var(--fg);border:2px solid var(--ac);border-radius:6px;box-sizing:border-box}
+#code{width:130px;letter-spacing:.3em;text-transform:uppercase}#pname{width:260px}
 #mpMsg{min-height:1.5em;color:var(--ac)}#room{font-size:20px;letter-spacing:.1em;color:var(--ac)}
 .szsel{display:flex;align-items:center;gap:6px}.szsel span{opacity:.75;font-size:14px;margin-right:4px}.szsel button{min-width:0;font-size:14px;padding:6px 12px}.szsel button.on{background:var(--ac);color:#1b1410}body.cl .szsel{display:none}
 .mponly,.clonly{display:none}body.mp .mponly{display:block}body.cl .clonly{display:block}body.cl #bNew2,body.cl #bNew3{display:none}

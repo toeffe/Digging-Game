@@ -7,9 +7,12 @@ const Net=(()=>{
  const el=id=>document.getElementById(id),AB='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',COL=[0xe9a23b,0x4fa3e0,0xd9534f,0x6cc070],MAXP=4,rem={},
   b64=u=>{let s='';for(let i=0;i<u.length;i+=8192)s+=String.fromCharCode.apply(null,u.subarray(i,i+8192));return btoa(s)},
   unb=s=>{const b=atob(s),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return u},
-  r3=v=>Math.round(v*1000)/1000,msg=t=>{el('mpMsg').textContent=t},nm=s=>s===0?'Host':'Player '+(s+1);
+  r3=v=>Math.round(v*1000)/1000,msg=t=>{el('mpMsg').textContent=t},nm=s=>s===0?'Host':'Player '+(s+1),
+  cleanName=s=>String(s||'').replace(/[\u0000-\u001f\u007f]/g,'').replace(/\s+/g,' ').trim().slice(0,12),
+  myName=()=>{const n=cleanName(el('pname').value);try{localStorage.setItem('burstName',n)}catch(e){}return n},
+  who=id=>N.names[id]||nm(N.roster[id]);
  let peer=null,hostConn=null,clients={},acc=0,mowAcc=0,clk=0,connT=0;
- const N={mode:'solo',seq:0,hs:[],code:'',roster:{},pend:'',
+ const N={mode:'solo',seq:0,hs:[],code:'',roster:{},names:{},pend:'',
   on(h){this.hs.push(h)},emit(a){this.hs.forEach(h=>h(a))},
   send(a){a.by=ME;if(N.mode==='client'){if(hostConn&&hostConn.open)hostConn.send({t:'i',a});return}N.commit(a)},
   commit(a){if(!ok(a))return;a.seq=++N.seq;if(N.mode==='host')bcast({t:'a',a});N.emit(a)},
@@ -24,21 +27,21 @@ const Net=(()=>{
    if(mowAcc>.1){mowAcc=0;if(mowerOwner===ME)N.flushMow()}
    if(acc>=1/15){acc=0;const s={x:r3(px),z:r3(pz),yaw:r3(yaw),pitch:r3(pitch),cr:carry,cf:carryF,fl:flashOn&&Prog.up.lantern?1:0,m:mowerHeld?[r3(mower.position.x),r3(mower.position.z),r3(mower.rotation.y),mowerOn?1:0]:null};
     if(N.mode==='host')bcast({t:'p',id:'host',s});else if(hostConn&&hostConn.open)hostConn.send({t:'p',s})}},
-  leave(){clearTimeout(connT);if(peer){const p=peer;peer=null;try{p.destroy()}catch(e){}}hostConn=null;clients={};N.mode='solo';N.code='';N.roster={};N.seq=0;ME='local';
+  leave(){clearTimeout(connT);if(peer){const p=peer;peer=null;try{p.destroy()}catch(e){}}hostConn=null;clients={};N.mode='solo';N.code='';N.roster={};N.names={};N.seq=0;ME='local';
    clearRemotes();mowerOwner=null;mowerTarget=null;N.ui()},
-  host(){if(!window.Peer)return msg('Multiplayer library failed to load.');N.leave();msg('Creating room…');
+  host(){if(!window.Peer)return msg('Multiplayer library failed to load.');const name=myName()||'Host';N.leave();msg('Creating room…');
    connT=setTimeout(()=>fail('Could not reach the connection server.'),12000);
    const go=n=>{const code=Array.from({length:5},()=>AB[Math.random()*AB.length|0]).join(''),p=peer=new Peer('burst-'+code,{debug:0});
-    p.on('open',()=>{if(peer!==p)return;clearTimeout(connT);ME='host';N.mode='host';N.code=code;N.roster={host:0};startPlay();N.ui();msg('');toast('Room code: '+code+' — Esc for the invite link')});
+    p.on('open',()=>{if(peer!==p)return;clearTimeout(connT);ME='host';N.mode='host';N.code=code;N.roster={host:0};N.names={host:name};startPlay();N.ui();msg('');toast('Room code: '+code+' — Esc for the invite link')});
     p.on('connection',onConn);
     p.on('disconnected',()=>{if(peer===p&&!p.destroyed)p.reconnect()});
     p.on('error',e=>{if(peer!==p)return;if(e.type==='unavailable-id'&&n<4){p.destroy();go(n+1);return}if(N.mode!=='host')fail('Could not create a room ('+e.type+').')})};
    go(0)},
   join(code){code=(code||'').toUpperCase().replace(/[^A-Z0-9]/g,'');if(code.length<4)return msg('Enter the 5-character room code.');
-   if(!window.Peer)return msg('Multiplayer library failed to load.');N.leave();msg('Connecting…');
+   if(!window.Peer)return msg('Multiplayer library failed to load.');const name=myName();N.leave();msg('Connecting…');
    const p=peer=new Peer({debug:0});connT=setTimeout(()=>fail('Could not connect. Check the code and try again.'),15000);
    p.on('error',e=>{if(peer!==p)return;if(N.mode==='client')lost('Connection lost.');else fail(e.type==='peer-unavailable'?'No room with that code.':'Connection problem ('+e.type+').')});
-   p.on('open',id=>{if(peer!==p)return;ME=id;const c=hostConn=p.connect('burst-'+code,{reliable:true});
+   p.on('open',id=>{if(peer!==p)return;ME=id;const c=hostConn=p.connect('burst-'+code,{reliable:true,metadata:{name}});
     c.on('data',m=>{if(peer===p)onHost(m)});c.on('close',()=>{if(peer===p&&N.mode==='client')lost('The host left the game.')})})}};
 
  function fail(t){N.leave();msg(t)}
@@ -73,30 +76,31 @@ const Net=(()=>{
   conn.on('open',()=>{
    if(Object.keys(clients).length>=MAXP-1){conn.send({t:'full'});setTimeout(()=>conn.close(),300);return}
    const used=Object.values(N.roster);let slot=1;while(used.includes(slot))slot++;
-   N.roster[conn.peer]=slot;conn.send({t:'welcome',you:conn.peer,code:N.code,roster:N.roster,snap:snap()});
-   clients[conn.peer]={conn,pose:null};bcast({t:'roster',r:N.roster});addRemote(conn.peer);toast(nm(slot)+' joined');N.ui()});
+   N.roster[conn.peer]=slot;N.names[conn.peer]=cleanName(conn.metadata&&conn.metadata.name)||nm(slot);
+   conn.send({t:'welcome',you:conn.peer,code:N.code,roster:N.roster,names:N.names,snap:snap()});
+   clients[conn.peer]={conn,pose:null};bcast({t:'roster',r:N.roster,n:N.names});addRemote(conn.peer);toast(who(conn.peer)+' joined');N.ui()});
   conn.on('data',m=>{const c=clients[conn.peer];if(!c||!m)return;
    if(m.t==='i'&&m.a&&typeof m.a==='object'){const a=m.a;a.by=conn.peer;delete a.seq;N.commit(a)}
    else if(m.t==='p'&&m.s){c.pose=m.s;onPose(conn.peer,m.s);bcast({t:'p',id:conn.peer,s:m.s},conn.peer)}});
   conn.on('close',()=>drop(conn.peer));conn.on('error',()=>drop(conn.peer))}
- function drop(id){const c=clients[id];if(!c)return;delete clients[id];const p=c.pose,n=nm(N.roster[id]);
+ function drop(id){const c=clients[id];if(!c)return;delete clients[id];const p=c.pose,n=who(id);delete N.names[id];
   /* put down whatever they were carrying, where they stood */
   world.finds.forEach((f,i)=>{if(f.held===id)N.commit({type:'find_place',n:i,x:p?p.x:f.x,z:p?p.z:f.z,by:id})});
   rk.forEach((q,i)=>{if(q.held===id)N.commit({type:'rock_place',n:i,x:p?p.x:q.x,z:p?p.z:q.z,by:id})});
   if(mowerOwner===id)N.commit({type:'mower_drop',x:p&&p.m?p.m[0]:mower.position.x,z:p&&p.m?p.m[1]:mower.position.z,ry:p&&p.m?p.m[2]:mower.rotation.y,on:0,by:id});
-  delete N.roster[id];removeRemote(id);bcast({t:'roster',r:N.roster});toast(n+' left');N.ui()}
+  delete N.roster[id];removeRemote(id);bcast({t:'roster',r:N.roster,n:N.names});toast(n+' left');N.ui()}
 
  /* ---- client: messages from the host ---- */
  function onHost(m){if(!m)return;
   switch(m.t){
-   case'welcome':clearTimeout(connT);N.mode='client';N.code=m.code;N.roster=m.roster;startPlay(m.snap.seed,m.snap.size);applySnap(m.snap);
+   case'welcome':clearTimeout(connT);N.mode='client';N.code=m.code;N.roster=m.roster;N.names=m.names||{};startPlay(m.snap.seed,m.snap.size);applySnap(m.snap);
     for(const id in N.roster)if(id!==ME)addRemote(id);N.ui();msg('');break;
    case'a':N.seq=m.a.seq;N.emit(m.a);break;
    case'p':onPose(m.id,m.s);break;
    case'clock':dayT=m.d;break;
-   case'roster':{const old=N.roster;N.roster=m.r;
-    for(const id in m.r)if(!(id in old)&&id!==ME){addRemote(id);toast(nm(m.r[id])+' joined')}
-    for(const id in old)if(!(id in m.r)){removeRemote(id);toast(nm(old[id])+' left')}
+   case'roster':{const old=N.roster,oldN=N.names;N.roster=m.r;if(m.n)N.names=m.n;
+    for(const id in m.r)if(!(id in old)&&id!==ME){addRemote(id);toast(who(id)+' joined')}
+    for(const id in old)if(!(id in m.r)){removeRemote(id);toast((oldN[id]||nm(old[id]))+' left')}
     N.ui();break}
    case'full':fail('That room is full.')}}
 
@@ -119,7 +123,7 @@ const Net=(()=>{
   s.gl.forEach((a,i)=>{if(a)glPlace(i,a[0],a[1],a[2]>=0?a[2]:null);else if(GS[i])glPick(i)});glOn=!!s.glon;glK=glOn?1:0}
 
  /* ---- remote players: simple avatar (body, head, the real shovel) with an interpolated pose ---- */
- function tagTex(t,c){const cv=document.createElement('canvas');cv.width=256;cv.height=64;const x=cv.getContext('2d');x.font='bold 34px Georgia,serif';x.textAlign='center';x.textBaseline='middle';
+ function tagTex(t,c){const cv=document.createElement('canvas');cv.width=256;cv.height=64;const x=cv.getContext('2d');let sz=34;x.font='bold '+sz+'px Georgia,serif';while(sz>16&&x.measureText(t).width>230)x.font='bold '+(sz-=2)+'px Georgia,serif';x.textAlign='center';x.textBaseline='middle';
   x.lineWidth=6;x.strokeStyle='rgba(0,0,0,.7)';x.strokeText(t,128,32);x.fillStyle='#'+c.toString(16).padStart(6,'0');x.fillText(t,128,32);return new THREE.CanvasTexture(cv)}
  /* shared geometry + materials for every avatar; only the shirt and cap colours are per player */
  const UP=new THREE.Vector3(0,1,0),dk=c=>(((c>>16&255)*.55|0)<<16)|(((c>>8&255)*.55|0)<<8)|((c&255)*.55|0);let AV=null;
@@ -145,7 +149,7 @@ const Net=(()=>{
   const arms=[-1,1].map(s=>({s,up:M(K.limb,shirt),lo:M(K.limb,K.skin),jt:M(K.ball,shirt,0,0,0,[.052,.052,.052]),hd:M(K.ball,K.glove,0,0,0,[.058,.058,.058])}));
   arms.forEach(a=>g.add(a.up,a.lo,a.jt,a.hd));
   pivot.position.set(.45,-.62,-.3);const shovel=sh.children[0].clone();pivot.add(shovel);neck.add(pivot);g.add(neck);
-  const tag=new THREE.Sprite(new THREE.SpriteMaterial({map:tagTex(nm(slot),col),transparent:true,fog:false,depthWrite:false}));tag.scale.set(1.3,.325,1);tag.position.y=2.25;g.add(tag);
+  const tag=new THREE.Sprite(new THREE.SpriteMaterial({map:tagTex(who(id),col),transparent:true,fog:false,depthWrite:false}));tag.scale.set(1.3,.325,1);tag.position.y=2.25;g.add(tag);
   scene.add(g);return rem[id]={g,neck,pivot,shovel,tag,lamp,beam,legs,arms,mats:[shirt,capm],first:1,x:0,z:0,yaw:0,pitch:0,tx:0,tz:0,tyaw:0,tpitch:0,swing:0,ph:0,amp:0,mode:'shovel',hk:'',hm:null}}
  function removeRemote(id){const r=rem[id];if(!r)return;hold(r,-1,-1,false);scene.remove(r.g);r.tag.material.map.dispose();r.tag.material.dispose();r.mats.forEach(m=>m.dispose());delete rem[id]}
  const _a=new THREE.Vector3(),_b=new THREE.Vector3(),_c=new THREE.Vector3();
@@ -188,5 +192,6 @@ const Net=(()=>{
  el('code').oninput=e=>{e.target.value=e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'')};el('code').onkeydown=e=>{if(e.key==='Enter')N.join(el('code').value)};
  el('bCopy').onclick=()=>{const u=location.origin+location.pathname+'?room='+N.code;(navigator.clipboard?navigator.clipboard.writeText(u):Promise.reject()).then(()=>toast('Invite link copied'),()=>prompt('Invite link',u))};
  try{const q=new URLSearchParams(location.search).get('room');if(q){N.pend=q.toUpperCase().replace(/[^A-Z0-9]/g,'');el('code').value=N.pend}}catch(e){}
+ try{const v=localStorage.getItem('burstName');if(v)el('pname').value=cleanName(v)}catch(e){}
  addEventListener('beforeunload',()=>{if(peer)try{peer.destroy()}catch(e){}});
  return N})();
