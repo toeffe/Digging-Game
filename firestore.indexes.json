@@ -1,0 +1,21 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "solo",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "size", "order": "ASCENDING" },
+        { "fieldPath": "time", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "team",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "size", "order": "ASCENDING" },
+        { "fieldPath": "time", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

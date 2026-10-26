@@ -10,6 +10,7 @@ const Net=(()=>{
   packV=u=>{const o=new Uint8Array((u.length+7)>>3);for(let i=0;i<u.length;i++)if(u[i])o[i>>3]|=1<<(i&7);return o},
   unpackV=(b,len)=>{const u=new Uint8Array(len);for(let i=0;i<len;i++)if(b[i>>3]&(1<<(i&7)))u[i]=1;return u},
   r3=v=>Math.round(v*1000)/1000,msg=t=>{el('mpMsg').textContent=t},nm=s=>s===0?'Host':'Player '+(s+1),
+  ids=a=>{const ns=Array.isArray(a.ns)?a.ns:(Number.isInteger(a.n)?[a.n]:null);if(!ns||!ns.length||ns.length>8)return null;if(ns.some((n,i)=>!Number.isInteger(n)||n<0||n>=rk.length||ns.indexOf(n)!==i))return null;return ns},
   cleanName=s=>String(s||'').replace(/[\u0000-\u001f\u007f]/g,'').replace(/\s+/g,' ').trim().slice(0,12),
   myName=()=>{const n=cleanName(el('pname').value);try{localStorage.setItem('burstName',n)}catch(e){}return n},
   who=id=>N.names[id]||nm(N.roster[id]);
@@ -28,7 +29,7 @@ const Net=(()=>{
   tick(dt){if(N.mode==='solo')return;updateRemotes(dt);acc+=dt;mowAcc+=dt;
    if(N.mode==='host'&&(clk+=dt)>10){clk=0;bcast({t:'clock',d:dayT,w:world?world.flood:0})}/* host owns the clock and the flood level; clients just resync now and then */
    if(mowAcc>.1){mowAcc=0;if(mowerOwner===ME)N.flushMow()}
-   if(acc>=1/15){acc=0;const s={x:r3(px),y:r3(py),z:r3(pz),yaw:r3(yaw),pitch:r3(pitch),cr:carry,cf:carryF,fl:flashOn&&Prog.up.lantern?1:0,m:mowerHeld?[r3(mower.position.x),r3(mower.position.z),r3(mower.rotation.y),mowerOn?1:0]:null};
+   if(acc>=1/15){acc=0;const s={x:r3(px),y:r3(py),z:r3(pz),yaw:r3(yaw),pitch:r3(pitch),cr:pile.length?pile.slice():carry,cf:carryF,fl:flashOn&&Prog.up.lantern?1:0,tl:sel,m:mowerHeld?[r3(mower.position.x),r3(mower.position.z),r3(mower.rotation.y),mowerOn?1:0]:null};
     if(N.mode==='host')bcast({t:'p',id:'host',s});else if(hostConn&&hostConn.open)hostConn.send({t:'p',s})}},
   leave(){clearTimeout(connT);if(peer){const p=peer;peer=null;try{p.destroy()}catch(e){}}hostConn=null;clients={};N.mode='solo';N.code='';N.roster={};N.names={};N.seq=0;ME='local';
    clearRemotes();mowerOwner=null;mowerTarget=null;N.ui()},
@@ -54,19 +55,23 @@ const Net=(()=>{
  /* ---- host-side validation: the host's world is the truth ---- */
  function ok(a){if(!a||typeof a.type!=='string'||!world)return false;const b=a.by;
   switch(a.type){
-   case'dig':return isFinite(a.x)&&isFinite(a.z)&&(a.y==null||isFinite(a.y))&&(a.dx==null||(isFinite(a.dx)&&isFinite(a.dy)&&isFinite(a.dz)));
+   case'dig':return isFinite(a.x)&&isFinite(a.z)&&(a.y==null||isFinite(a.y))&&(a.dx==null||(isFinite(a.dx)&&isFinite(a.dy)&&isFinite(a.dz)))&&(a.pk==null||a.pk===0||a.pk===1)&&(a.dv==null||a.dv===0||(DEV&&a.dv===1));
    case'find_pick':{const f=world.finds[a.n];return!!f&&!f.done&&!f.held}
    case'find_place':case'find_deposit':{const f=world.finds[a.n];return!!f&&!f.done&&f.held===b}
-   case'rock_pick':{const q=rk[a.n];return!!q&&!q.held}
-   case'rock_place':{const q=rk[a.n];return!!q&&q.held===b}
-   case'rock_sell':{const q=rk[a.n];return!!q&&q.held===b&&q.held!=='$'}
+   case'rock_pick':{const ns=ids(a);if(!ns)return false;const mine=rk.filter(q=>q.held===b);if(world.finds.some(f=>f.held===b))return false;if(ns.some(n=>!rk[n]||rk[n].held))return false;
+    if(ns.some(n=>rk[n].gem||rk[n].s>.32))return ns.length===1&&!mine.length;if(mine.some(q=>q.gem))return false;return mine.length+ns.length<=8}
+   case'rock_place':{const ns=ids(a);return!!ns&&isFinite(a.x)&&isFinite(a.z)&&ns.every(n=>rk[n]&&rk[n].held===b)}
+   case'rock_sell':{const ns=ids(a);return!!ns&&ns.every(n=>rk[n]&&rk[n].held===b&&rk[n].held!=='$')}
    case'lamp_place':return Number.isInteger(a.i)&&a.i>=0&&a.i<Math.min(GLN,Prog.up.lamps)&&!GS[a.i]&&isFinite(a.x)&&isFinite(a.z)&&Math.abs(a.x)<=S/2&&Math.abs(a.z)<=S/2&&Math.hypot(a.x-SOCK[0],a.z-SOCK[1])<=CABLE_MAX+.5;
    case'lamp_pick':return Number.isInteger(a.i)&&a.i>=0&&a.i<GLN&&!!GS[a.i];
    case'lamp_power':return Prog.up.lamps>0;
+   case'ladder_place':return Number.isInteger(a.i)&&a.i>=0&&a.i<LN&&a.i<Prog.up.ladders&&!LS[a.i]&&isFinite(a.x)&&isFinite(a.y)&&isFinite(a.z)&&Math.abs(a.x)<=S/2&&Math.abs(a.z)<=S/2&&a.y>=BED-1&&a.y<3;
+   case'ladder_pick':return Number.isInteger(a.i)&&a.i>=0&&a.i<LN&&!!LS[a.i];
    case'pump_power':return Prog.up.pump>0;
    case'cable_cut':return Number.isInteger(a.i)&&!!GS[a.i]&&GS[a.i].cut==null&&isFinite(a.t);
    case'cable_fix':return Number.isInteger(a.i)&&!!GS[a.i]&&GS[a.i].cut!=null;
-   case'shutoff':return !!world&&world.exposed()&&!world.shut;
+   case'repair':{const s=world.sig[a.n];return !!s&&!s.rep&&(s.kind==='burst'?world.exposed():!!s.f)}
+   case'supply':{const s=world.sig[a.n];return !!s&&!!s.rep}
    case'bank_add':return DEV&&Number.isInteger(a.n)&&a.n>0&&a.n<=10000;
    case'mower_grab':return!mowerOwner;
    case'mower_drop':return mowerOwner===b;
@@ -113,22 +118,25 @@ const Net=(()=>{
 
  /* ---- late join: full state snapshot so joiners don't depend on replaying every action ---- */
  function snap(){const w=world;return{day:dayT,fl:w.flood,fw:w.fw|0,gs:w.gasAt?[...w.gasAt,gasT]:0,prog:Prog,seed:w.seed,size:S,V:b64(packV(w.vox)),D:b64(w.D),digs:w.digs,score:w.score,log:w.log,
-  f:w.finds.map(f=>[f.x,f.y,f.z,f.held||0,f.done?1:0,f.out?1:0]),r:rk.map(q=>[q.x,q.y,q.z,q.held||0,q.gem||0]),m:b64(mown),sf:w.sig.map(s=>s.f?1:0),
-  gl:GS.map(q=>q?[q.x,q.z,q.cut==null?-1:q.cut]:0),glon:glOn?1:0,pon:pumpOn?1:0,
+  f:w.finds.map(f=>[f.x,f.y,f.z,f.held||0,f.done?1:0,f.out?1:0]),r:rk.map(q=>[q.x,q.y,q.z,q.held||0,q.gem||0]),m:b64(mown),sf:w.sig.map(s=>[s.f?1:0,s.rep?1:0,s.on?1:0]),
+  gl:GS.map(q=>q?[q.x,q.z,q.cut==null?-1:q.cut]:0),glon:glOn?1:0,pon:pumpOn?1:0,ld:LS.map(q=>q?[q.x,q.y,q.z]:0),
   mo:{o:mowerOwner||null,x:mower.position.x,z:mower.position.z,ry:mower.rotation.y,on:mowerOn?1:0}}}
  function applySnap(s){const w=world;
   if(s.V)w.vox.set(unpackV(unb(s.V),w.vox.length));w.D.set(unb(s.D));w.digs=s.digs;w.score=s.score;w.log=s.log;w.flood=s.fl||0;w.fw=s.fw|0;if(s.gs){w.gasAt=s.gs.slice(0,3);gasStart(w.gasAt,s.gs[3])}
   s.f.forEach((a,i)=>{const f=w.finds[i];if(!f)return;f.x=a[0];f.y=a[1];f.z=a[2];f.held=a[3];f.done=a[4];f.out=a[5]});
   s.r.forEach((a,i)=>{const q=rk[i];if(!q)return;q.x=a[0];q.y=a[1];q.z=a[2];q.held=a[3];
    if(a.length>4&&(a[4]|0)!==q.gem){q.gem=a[4]|0;if(q.gem){q.s=Math.max(q.s,.1);rocks.setColorAt(i,gc.setRGB(...GEM[q.gem][2]))}else rocks.setColorAt(i,gc.setHSL(.1,.15,.4).convertSRGBToLinear())}});
-  w.sig.forEach((x,i)=>{x.f=(s.sf[i]|0)>0});mown.set(unb(s.m));
+  w.sig.forEach((x,i)=>{const a=s.sf[i];if(Array.isArray(a)){x.f=!!a[0];x.rep=!!a[1];x.on=!!a[2]}else x.f=(a|0)>0});if(w.sig[0])w.shut=w.sig[0].on?1:0;refreshSupply();mown.set(unb(s.m));
   sync(true);for(let i=0;i<w.log.length;i+=2)clearGrass(w.log[i],w.log[i+1]);
   for(let ci=0;ci<MG*MG;ci++)if(mown[ci])cutCell(ci);grass.instanceMatrix.needsUpdate=true;
   rk.forEach((q,i)=>{if(q.held){go.position.set(0,-50,0);go.scale.setScalar(0);go.updateMatrix();rocks.setMatrixAt(i,go.matrix)}else setRock(i)});rocks.instanceMatrix.needsUpdate=rocks.instanceColor.needsUpdate=true;
   w.finds.forEach(f=>{f.seen=f.out||f.held||f.done?1:0;syncFind(f,1)});
   const o=s.mo;mowerOwner=o.o;mowerOn=!!o.on;mower.position.set(o.x,w.hAt(o.x,o.z),o.z);mower.rotation.y=o.ry;mowerTarget={x:o.x,z:o.z,ry:o.ry};
-  dayT=s.day;Prog={bank:s.prog.bank,up:Object.assign({},s.prog.up)};hudPts();
-  s.gl.forEach((a,i)=>{if(a)glPlace(i,a[0],a[1],a[2]>=0?a[2]:null);else if(GS[i])glPick(i)});glOn=!!s.glon;glK=glOn?1:0;pumpOn=!!s.pon}
+  dayT=s.day;Prog={bank:s.prog.bank,up:Object.assign({pick:0},s.prog.up)};hudPts();
+  carry=-1;pile.length=0;rk.forEach((q,i)=>{if(q.held===ME){if(q.gem)carry=i;else pile.push(i)}});showPile();
+  if(carry>=0){const q=rk[carry];carryM.scale.set(q.s*q.w,q.s,q.s*q.w);carryM.material.color.fromArray(rocks.instanceColor.array,carry*3)}
+  s.gl.forEach((a,i)=>{if(a)glPlace(i,a[0],a[1],a[2]>=0?a[2]:null);else if(GS[i])glPick(i)});glOn=!!s.glon;glK=glOn?1:0;pumpOn=!!s.pon;
+  if(s.ld)s.ld.forEach((a,i)=>{if(a)ladPlace(i,a[0],a[1],a[2]);else if(LS[i])ladPick(i)})}
 
  /* ---- remote players: simple avatar (body, head, the real shovel) with an interpolated pose ---- */
  function tagTex(t,c){const cv=document.createElement('canvas');cv.width=256;cv.height=64;const x=cv.getContext('2d');let sz=34;x.font='bold '+sz+'px Georgia,serif';while(sz>16&&x.measureText(t).width>230)x.font='bold '+(sz-=2)+'px Georgia,serif';x.textAlign='center';x.textBaseline='middle';
@@ -156,15 +164,15 @@ const Net=(()=>{
   /* arms: two segments each, re-aimed every frame from the shoulder to wherever the hand should be */
   const arms=[-1,1].map(s=>({s,up:M(K.limb,shirt),lo:M(K.limb,K.skin),jt:M(K.ball,shirt,0,0,0,[.052,.052,.052]),hd:M(K.ball,K.glove,0,0,0,[.058,.058,.058])}));
   arms.forEach(a=>g.add(a.up,a.lo,a.jt,a.hd));
-  pivot.position.set(.45,-.62,-.3);const shovel=sh.children[0].clone();pivot.add(shovel);neck.add(pivot);g.add(neck);
+  pivot.position.set(.45,-.62,-.3);const shovel=sh.children[0].clone(),pick=pk.children[0].clone();pick.visible=false;pivot.add(shovel,pick);neck.add(pivot);g.add(neck);
   const tag=new THREE.Sprite(new THREE.SpriteMaterial({map:tagTex(who(id),col),transparent:true,fog:false,depthWrite:false}));tag.scale.set(1.3,.325,1);tag.position.y=2.25;g.add(tag);
-  scene.add(g);return rem[id]={g,neck,pivot,shovel,tag,lamp,beam,legs,arms,mats:[shirt,capm],first:1,x:0,y:0,z:0,yaw:0,pitch:0,tx:0,ty:0,tz:0,tyaw:0,tpitch:0,swT:-1,swP:[0,0,0],ph:0,amp:0,mode:'shovel',hk:'',hm:null}}
+  scene.add(g);return rem[id]={g,neck,pivot,shovel,pick,tag,lamp,beam,legs,arms,mats:[shirt,capm],first:1,x:0,y:0,z:0,yaw:0,pitch:0,tx:0,ty:0,tz:0,tyaw:0,tpitch:0,swT:-1,swP:[0,0,0],ph:0,amp:0,mode:'shovel',usePick:false,hk:'',hm:null}}
  function removeRemote(id){const r=rem[id];if(!r)return;hold(r,-1,-1,false);scene.remove(r.g);r.tag.material.map.dispose();r.tag.material.dispose();r.mats.forEach(m=>m.dispose());delete rem[id]}
  const _a=new THREE.Vector3(),_b=new THREE.Vector3(),_c=new THREE.Vector3();
  function seg(m,a,b){_c.subVectors(b,a);const l=_c.length()||1e-3;m.position.copy(a);m.quaternion.setFromUnitVectors(UP,_c.divideScalar(l));m.scale.set(1,l,1)}
  /* hand target in avatar space: shovel grips, or out in front when carrying something / pushing the mower */
- function hand(r,a,out){const s=a.s;
-  if(r.mode==='shovel'){const n=r.shovel.children.length,gl=r.shovel.children[s>0?n-2:n-1];gl.getWorldPosition(out)}
+ function hand(r,a,out){const s=a.s,tool=r.usePick?r.pick:r.shovel;
+  if(r.mode==='shovel'){const n=tool.children.length,gl=tool.children[s>0?n-2:n-1];gl.getWorldPosition(out)}
   else r.neck.localToWorld(r.mode==='mower'?out.set(s*.2,-.7,-.8):out.set(.32+s*.14,-.4,-.7));
   return r.g.worldToLocal(out)}
  function poseArms(r){r.g.updateMatrixWorld(true);
@@ -172,15 +180,15 @@ const Net=(()=>{
    const len=sh0.distanceTo(h),bend=Math.max(.05,.62-len)*.5,el=new THREE.Vector3(m.x+a.s*(.04+bend*.5),m.y-.04-bend,m.z+.02);
    seg(a.up,sh0,el);seg(a.lo,el,h);a.jt.position.copy(el);a.hd.position.copy(h)}}
  function clearRemotes(){for(const id in rem)removeRemote(id)}
- function hold(r,cr,cf,mw){const key=cr+'|'+cf+'|'+(mw?1:0);if(r.hk===key)return;r.hk=key;
-  if(r.hm){r.neck.remove(r.hm);if(r.hm.userData.own)r.hm.material.dispose();r.hm=null}
-  r.shovel.visible=!(mw||cr>=0||cf>=0);r.mode=mw?'mower':cr>=0||cf>=0?'carry':'shovel';
-  if(cr>=0&&rk[cr]){const q=rk[cr],m=new THREE.Mesh(rockG,new THREE.MeshStandardMaterial({roughness:.95}));m.material.color.fromArray(rocks.instanceColor.array,cr*3);m.scale.set(q.s*q.w,q.s,q.s*q.w);m.position.set(.35,-.35,-.7);m.userData.own=1;m.castShadow=true;r.neck.add(m);r.hm=m}
+ function hold(r,cr,cf,mw,tl){const ids=Array.isArray(cr)?cr:(cr>=0?[cr]:[]),key=ids.join('.')+'|'+cf+'|'+(mw?1:0)+'|'+(tl|0);if(r.hk===key)return;r.hk=key;
+  if(r.hm){r.neck.remove(r.hm);r.hm.traverse(o=>{if(o.isMesh&&o.userData.own&&o.material)o.material.dispose()});r.hm=null}
+  const busy=!!(mw||ids.length||cf>=0);r.usePick=!busy&&(tl|0)===4;r.shovel.visible=!busy&&!r.usePick;if(r.pick)r.pick.visible=r.usePick;r.mode=mw?'mower':busy?'carry':'shovel';
+  if(ids.length){const g=new THREE.Group();ids.forEach((n,i)=>{const q=rk[n];if(!q)return;const m=new THREE.Mesh(rockG,new THREE.MeshStandardMaterial({roughness:.95}));m.material.color.fromArray(rocks.instanceColor.array,n*3);m.scale.set(q.s*q.w,q.s,q.s*q.w);const a=i*1.1;m.position.set(Math.cos(a)*.08,i*.032,Math.sin(a)*.05);m.userData.own=1;m.castShadow=true;g.add(m)});g.position.set(.35,-.35,-.7);r.neck.add(g);r.hm=g}
   else if(cf>=0&&world.finds[cf]){const f=world.finds[cf],m=f.m.clone(true);m.visible=true;m.scale.setScalar(Math.min(2.4,.1/Math.max(.03,f.sz)));m.position.set(.32,-.36,-.78);r.neck.add(m);r.hm=m}}
  function onPose(id,s){if(id===ME||!s)return;let r=rem[id];if(!r){if(!(id in N.roster))return;r=addRemote(id)}
   r.tx=s.x;r.tz=s.z;r.ty=s.y||0;r.tyaw=s.yaw;r.tpitch=s.pitch;if(r.first){r.first=0;r.x=s.x;r.z=s.z;r.y=r.ty;r.yaw=s.yaw;r.pitch=s.pitch}
   r.lamp.visible=r.beam.visible=!!s.fl;
-  if(world)hold(r,s.cr,s.cf,!!s.m);
+  if(world)hold(r,s.cr,s.cf,!!s.m,s.tl);
   if(s.m&&mowerOwner===id){mowerTarget={x:s.m[0],z:s.m[1],ry:s.m[2]};mowerOn=!!s.m[3]}}
  function updateRemotes(dt){const k=Math.min(1,dt*12),vis=state==='play'||state==='won';
   for(const id in rem){const r=rem[id];r.g.visible=vis;if(!vis||!world)continue;
@@ -191,6 +199,7 @@ const Net=(()=>{
    let d=r.tyaw-r.yaw;d-=Math.round(d/6.2832)*6.2832;r.yaw+=d*k;r.pitch+=(r.tpitch-r.pitch)*k;
    r.y+=(r.ty-r.y)*k;const g=world.floorAt(r.x,r.z,r.y);r.g.position.set(r.x,r.y>g+.2?r.y:g,r.z);r.g.rotation.y=r.yaw;r.neck.rotation.x=r.pitch;
    if(r.swT>=0&&(r.swT+=dt)>=SWK[4][0])r.swT=-1;const sw=swingAt(r.swT,r.swP);r.pivot.position.set(.45,-.62+sw[0],-.3+sw[1]);r.pivot.rotation.set(sw[2],-sw[2]*.12,-sw[2]*.06);
+   const b=r.shovel.getObjectByName('blade'),h=r.pick&&r.pick.getObjectByName('head');if(b)b.scale.setScalar(1+.08*(Prog.up.shovel|0));if(h)h.scale.setScalar(1+.08*Math.max(0,(Prog.up.pick|0)-1));
    if(r.hm&&r.hm.userData.own)r.hm.rotation.y=T*.4;else if(r.hm)r.hm.rotation.y=T*.6;
    poseArms(r)}}
 

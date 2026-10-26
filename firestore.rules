@@ -1,0 +1,57 @@
+rules_version = '2';
+// Deploy: Firebase Console → Firestore → Rules → paste → Publish
+// Or: firebase deploy --only firestore:rules
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signed() {
+      return request.auth != null;
+    }
+    function own(id) {
+      return signed() && id.matches('^' + request.auth.uid + '_(20|28|36|44|60)$');
+    }
+    function sizeOk(id, size) {
+      return (size == 20 && id.matches('.*_20$'))
+        || (size == 28 && id.matches('.*_28$'))
+        || (size == 36 && id.matches('.*_36$'))
+        || (size == 44 && id.matches('.*_44$'))
+        || (size == 60 && id.matches('.*_60$'));
+    }
+    function runOk(id, data) {
+      return data.time is number && data.time > 0 && data.time < 7200
+        && data.pts is number && data.pts >= 0
+        && data.digs is number && data.digs >= 0
+        && data.size is number && sizeOk(id, data.size);
+    }
+    function soloOk(id, data) {
+      return data.keys().hasOnly(['name', 'time', 'pts', 'digs', 'size'])
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 12
+        && runOk(id, data);
+    }
+    function nameOk(n, i) {
+      return n.size() <= i || (n[i] is string && n[i].size() > 0 && n[i].size() <= 12);
+    }
+    function teamOk(id, data) {
+      return data.keys().hasOnly(['names', 'time', 'pts', 'digs', 'size'])
+        && data.names is list && data.names.size() > 0 && data.names.size() <= 4
+        && nameOk(data.names, 0) && nameOk(data.names, 1) && nameOk(data.names, 2) && nameOk(data.names, 3)
+        && runOk(id, data);
+    }
+
+    match /solo/{id} {
+      allow read: if true;
+      allow create: if own(id) && soloOk(id, request.resource.data);
+      allow update: if own(id) && soloOk(id, request.resource.data)
+        && request.resource.data.size == resource.data.size
+        && request.resource.data.time < resource.data.time;
+      allow delete: if false;
+    }
+    match /team/{id} {
+      allow read: if true;
+      allow create: if own(id) && teamOk(id, request.resource.data);
+      allow update: if own(id) && teamOk(id, request.resource.data)
+        && request.resource.data.size == resource.data.size
+        && request.resource.data.time < resource.data.time;
+      allow delete: if false;
+    }
+  }
+}

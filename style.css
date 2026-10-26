@@ -10,13 +10,13 @@ button{font:inherit;font-size:18px;min-width:260px;padding:12px 22px;background:
 button:hover:not(:disabled){background:var(--ac);color:#1b1410}button:disabled{opacity:.45;cursor:not-allowed;border-color:#7a6a58}
 #hud{display:none;position:fixed;inset:0;pointer-events:none;text-shadow:0 1px 4px #000}
 #stat{position:absolute;left:16px;top:calc(12px + env(safe-area-inset-top,0px));font-size:18px}
-#btns{position:absolute;right:12px;top:calc(12px + env(safe-area-inset-top,0px));display:flex;gap:8px}#btns button{min-width:0;font-size:14px;padding:6px 12px;pointer-events:auto}
 #cross{position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px;border-radius:50%;background:#fff;box-shadow:0 0 0 1px #000;transition:transform .14s,opacity .14s,background .14s,box-shadow .14s}
 #cross.no{opacity:.35;transform:scale(.7)}#cross.tg{background:transparent;box-shadow:0 0 0 1.5px #fff,0 0 0 2.5px #0008;transform:scale(2.3)}
 #cross.hit{animation:chit .24s ease-out}@keyframes chit{0%{transform:scale(2.6);background:var(--ac)}100%{transform:scale(1)}}
 #hotbar{position:absolute;left:50%;bottom:calc(12px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:6px}
-#hbName{font-size:13px;opacity:.9;min-height:16px}.hbs{display:flex;gap:6px}
-.hb{position:relative;width:54px;height:54px;box-sizing:border-box;border:2px solid #fff4;border-radius:8px;background:#1b1410b3;display:flex;align-items:center;justify-content:center;color:var(--fg);transition:transform .12s,border-color .12s}
+#hbName{font-size:13px;opacity:.9;min-height:16px}.hbs{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;max-width:min(520px,94vw)}
+.hb{position:relative;width:48px;height:48px;box-sizing:border-box;border:2px solid #fff4;border-radius:8px;background:#1b1410b3;display:flex;align-items:center;justify-content:center;color:var(--fg);transition:transform .12s,border-color .12s}
+.hb.empty{opacity:.28}.hb.empty svg{visibility:hidden}
 .hb i{position:absolute;left:5px;top:1px;font-size:11px;font-style:normal;opacity:.7}.hb svg{width:30px;height:30px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .hb.on{border-color:var(--ac);color:var(--ac);transform:translateY(-4px) scale(1.08);box-shadow:0 0 12px #e9a23b66}.hb.lock{opacity:.3}
 #cdf{position:absolute;inset:0 0 auto;height:0;background:#0a0806cc;pointer-events:none;z-index:1}.hb{overflow:hidden}
@@ -57,6 +57,19 @@ button:hover:not(:disabled){background:var(--ac);color:#1b1410}button:disabled{o
 .bk img{width:84px;height:84px}.bk b{font-size:14px;margin-top:2px}.bk i{font-style:normal;font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--tc)}.bk span{position:absolute;right:7px;top:5px;font-size:12px;opacity:.8}
 .bk.no{border-color:#fff2;background:none}.bk.no img{filter:brightness(0);opacity:.45}.bk.no b{opacity:.5}.bk.no i{opacity:.55}
 #book .bkp button{display:block;margin:14px auto 0}
+#board .bdp{width:min(640px,94vw);max-height:min(88vh,720px);overflow:auto;box-sizing:border-box;background:#1b1410f2;border:2px solid var(--ac);border-radius:10px;padding:20px 22px 16px}
+.lbmode,.lbsz{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:8px 0}
+.lbmode button,.lbsz button{min-width:0;font-size:14px;padding:6px 12px}.lbmode button.on,.lbsz button.on{background:var(--ac);color:#1b1410}
+#lbMsg{font-size:14px;opacity:.8;text-align:center}#lbList{text-align:left;margin-top:8px}
+.lb{display:grid;grid-template-columns:2.2em 1fr auto;gap:2px 10px;align-items:baseline;padding:7px 0;border-bottom:1px solid #fff2}
+.lb.you{color:var(--ac)}.lb small{grid-column:2/4;opacity:.7;font-size:13px}
+#board .bdp button{display:block;margin:14px auto 0}
+#task{position:fixed;inset:0;z-index:6;display:flex;align-items:center;justify-content:center;background:#000a}
+#task[hidden]{display:none}
+.taskp{width:min(720px,94vw);background:#1c140f;border:3px solid var(--ac);border-radius:16px;padding:14px 16px 12px}
+.taskp h3{margin:0 0 8px;text-align:center;letter-spacing:.14em;color:var(--ac)}
+#taskSvg{width:100%;height:auto;background:#12161c;border-radius:12px;touch-action:none;cursor:pointer}
+.taskp p{text-align:center;font-size:14px;opacity:.8;margin:8px 0 0}
 #set .setp{width:min(460px,92vw);box-sizing:border-box;background:#1b1410f2;border:2px solid var(--ac);border-radius:10px;padding:22px 26px 18px;text-align:left}
 #set h2{text-align:center;font-size:clamp(28px,5vw,40px);letter-spacing:.12em;margin:0 0 12px}
 #set .setrows{display:flex;flex-direction:column;gap:8px}
