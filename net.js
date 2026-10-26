@@ -13,19 +13,20 @@ const Net=(()=>{
   cleanName=s=>String(s||'').replace(/[\u0000-\u001f\u007f]/g,'').replace(/\s+/g,' ').trim().slice(0,12),
   myName=()=>{const n=cleanName(el('pname').value);try{localStorage.setItem('burstName',n)}catch(e){}return n},
   who=id=>N.names[id]||nm(N.roster[id]);
- let peer=null,hostConn=null,clients={},acc=0,mowAcc=0,clk=0,connT=0;
+ let peer=null,hostConn=null,clients={},acc=0,mowAcc=0,clk=0,connT=0;const koLast={};/* last knockout per player, rate-limits the bank penalty */
  const N={mode:'solo',seq:0,hs:[],code:'',roster:{},names:{},pend:'',
   on(h){this.hs.push(h)},emit(a){this.hs.forEach(h=>h(a))},
   send(a){a.by=ME;if(N.mode==='client'){if(hostConn&&hostConn.open)hostConn.send({t:'i',a});return}N.commit(a)},
   commit(a){if(!ok(a))return;a.seq=++N.seq;if(N.mode==='host')bcast({t:'a',a});N.emit(a)},
   flushMow(){if(mowQ.length)N.send({type:'mow',cells:mowQ.splice(0)})},
-  swing(id){const r=rem[id];if(r)r.swing=1},
+  swing(id){const r=rem[id];if(r)r.swT=SWK[1][0]},/* their dig arrives at impact: play the strike and follow-through */
   reset(){for(const id in rem)hold(rem[id],-1,-1,false)},
   tags(){return Object.values(rem).flatMap(r=>[r.tag,r.beam])},/* transparent extras hidden in the depth pass */
+  bodies(){return Object.values(rem).map(r=>r.g)},/* full avatars: hidden while the static shadow map rebakes */
   ui(){const n=Object.keys(N.roster).length,b=document.body.classList,s=N.mode==='solo'?'':`Room ${N.code} · ${n} player${n>1?'s':''}`;
    b.toggle('mp',N.mode!=='solo');b.toggle('cl',N.mode==='client');el('rm').textContent=s&&' · '+s;el('room').textContent=s},
   tick(dt){if(N.mode==='solo')return;updateRemotes(dt);acc+=dt;mowAcc+=dt;
-   if(N.mode==='host'&&(clk+=dt)>10){clk=0;bcast({t:'clock',d:dayT})}/* host owns the clock; clients just resync now and then */
+   if(N.mode==='host'&&(clk+=dt)>10){clk=0;bcast({t:'clock',d:dayT,w:world?world.flood:0})}/* host owns the clock and the flood level; clients just resync now and then */
    if(mowAcc>.1){mowAcc=0;if(mowerOwner===ME)N.flushMow()}
    if(acc>=1/15){acc=0;const s={x:r3(px),y:r3(py),z:r3(pz),yaw:r3(yaw),pitch:r3(pitch),cr:carry,cf:carryF,fl:flashOn&&Prog.up.lantern?1:0,m:mowerHeld?[r3(mower.position.x),r3(mower.position.z),r3(mower.rotation.y),mowerOn?1:0]:null};
     if(N.mode==='host')bcast({t:'p',id:'host',s});else if(hostConn&&hostConn.open)hostConn.send({t:'p',s})}},
@@ -59,10 +60,10 @@ const Net=(()=>{
    case'rock_pick':{const q=rk[a.n];return!!q&&!q.held}
    case'rock_place':{const q=rk[a.n];return!!q&&q.held===b}
    case'rock_sell':{const q=rk[a.n];return!!q&&q.held===b&&q.held!=='$'}
-   case'scrap':{const s=world.sig[a.n];return!!s&&s.kind!=='burst'&&!!s.f&&!s.sold}
    case'lamp_place':return Number.isInteger(a.i)&&a.i>=0&&a.i<Math.min(GLN,Prog.up.lamps)&&!GS[a.i]&&isFinite(a.x)&&isFinite(a.z)&&Math.abs(a.x)<=S/2&&Math.abs(a.z)<=S/2&&Math.hypot(a.x-SOCK[0],a.z-SOCK[1])<=CABLE_MAX+.5;
    case'lamp_pick':return Number.isInteger(a.i)&&a.i>=0&&a.i<GLN&&!!GS[a.i];
    case'lamp_power':return Prog.up.lamps>0;
+   case'pump_power':return Prog.up.pump>0;
    case'cable_cut':return Number.isInteger(a.i)&&!!GS[a.i]&&GS[a.i].cut==null&&isFinite(a.t);
    case'cable_fix':return Number.isInteger(a.i)&&!!GS[a.i]&&GS[a.i].cut!=null;
    case'shutoff':return !!world&&world.exposed()&&!world.shut;
@@ -72,7 +73,9 @@ const Net=(()=>{
    case'mow':return mowerOwner===b&&Array.isArray(a.cells);
    case'buy':return Object.prototype.hasOwnProperty.call(UPG,a.id)&&Prog.up[a.id]<UPG[a.id].max&&Prog.bank>=upCost(a.id);
    case'new_yard':return b===ME&&(a.size==null||SIZES.includes(a.size));
-   case'win':return b===ME}
+   case'win':case'flooded':return b===ME;
+   case'cave_warn':case'cavein':return b===ME&&isFinite(a.x)&&isFinite(a.z)&&(a.y==null||isFinite(a.y));
+   case'ko':{const t=performance.now();if(t-(koLast[b]||0)<4000)return false;koLast[b]=t;return a.c==='gas'||a.c==='cave'}}
   return false}
 
  /* ---- host: connections ---- */
@@ -101,7 +104,7 @@ const Net=(()=>{
     for(const id in N.roster)if(id!==ME)addRemote(id);N.ui();msg('');break;
    case'a':N.seq=m.a.seq;N.emit(m.a);break;
    case'p':onPose(m.id,m.s);break;
-   case'clock':dayT=m.d;break;
+   case'clock':dayT=m.d;if(world&&isFinite(m.w))world.flood=m.w;break;
    case'roster':{const old=N.roster,oldN=N.names;N.roster=m.r;if(m.n)N.names=m.n;
     for(const id in m.r)if(!(id in old)&&id!==ME){addRemote(id);toast(who(id)+' joined')}
     for(const id in old)if(!(id in m.r)){removeRemote(id);toast((oldN[id]||nm(old[id]))+' left')}
@@ -109,23 +112,23 @@ const Net=(()=>{
    case'full':fail('That room is full.')}}
 
  /* ---- late join: full state snapshot so joiners don't depend on replaying every action ---- */
- function snap(){const w=world;return{day:dayT,prog:Prog,seed:w.seed,size:S,V:b64(packV(w.vox)),D:b64(w.D),digs:w.digs,score:w.score,log:w.log,
-  f:w.finds.map(f=>[f.x,f.y,f.z,f.held||0,f.done?1:0,f.out?1:0]),r:rk.map(q=>[q.x,q.y,q.z,q.held||0,q.gem||0]),m:b64(mown),sf:w.sig.map(s=>s.sold?2:s.f?1:0),
-  gl:GS.map(q=>q?[q.x,q.z,q.cut==null?-1:q.cut]:0),glon:glOn?1:0,
+ function snap(){const w=world;return{day:dayT,fl:w.flood,fw:w.fw|0,gs:w.gasAt?[...w.gasAt,gasT]:0,prog:Prog,seed:w.seed,size:S,V:b64(packV(w.vox)),D:b64(w.D),digs:w.digs,score:w.score,log:w.log,
+  f:w.finds.map(f=>[f.x,f.y,f.z,f.held||0,f.done?1:0,f.out?1:0]),r:rk.map(q=>[q.x,q.y,q.z,q.held||0,q.gem||0]),m:b64(mown),sf:w.sig.map(s=>s.f?1:0),
+  gl:GS.map(q=>q?[q.x,q.z,q.cut==null?-1:q.cut]:0),glon:glOn?1:0,pon:pumpOn?1:0,
   mo:{o:mowerOwner||null,x:mower.position.x,z:mower.position.z,ry:mower.rotation.y,on:mowerOn?1:0}}}
  function applySnap(s){const w=world;
-  if(s.V)w.vox.set(unpackV(unb(s.V),w.vox.length));w.D.set(unb(s.D));w.digs=s.digs;w.score=s.score;w.log=s.log;
+  if(s.V)w.vox.set(unpackV(unb(s.V),w.vox.length));w.D.set(unb(s.D));w.digs=s.digs;w.score=s.score;w.log=s.log;w.flood=s.fl||0;w.fw=s.fw|0;if(s.gs){w.gasAt=s.gs.slice(0,3);gasStart(w.gasAt,s.gs[3])}
   s.f.forEach((a,i)=>{const f=w.finds[i];if(!f)return;f.x=a[0];f.y=a[1];f.z=a[2];f.held=a[3];f.done=a[4];f.out=a[5]});
   s.r.forEach((a,i)=>{const q=rk[i];if(!q)return;q.x=a[0];q.y=a[1];q.z=a[2];q.held=a[3];
    if(a.length>4&&(a[4]|0)!==q.gem){q.gem=a[4]|0;if(q.gem){q.s=Math.max(q.s,.1);rocks.setColorAt(i,gc.setRGB(...GEM[q.gem][2]))}else rocks.setColorAt(i,gc.setHSL(.1,.15,.4).convertSRGBToLinear())}});
-  w.sig.forEach((x,i)=>{const v=s.sf[i]|0;x.f=v>0;x.sold=v===2;if(x.sold&&x.ms)x.ms.forEach(m=>m.visible=false)});mown.set(unb(s.m));
+  w.sig.forEach((x,i)=>{x.f=(s.sf[i]|0)>0});mown.set(unb(s.m));
   sync(true);for(let i=0;i<w.log.length;i+=2)clearGrass(w.log[i],w.log[i+1]);
   for(let ci=0;ci<MG*MG;ci++)if(mown[ci])cutCell(ci);grass.instanceMatrix.needsUpdate=true;
   rk.forEach((q,i)=>{if(q.held){go.position.set(0,-50,0);go.scale.setScalar(0);go.updateMatrix();rocks.setMatrixAt(i,go.matrix)}else setRock(i)});rocks.instanceMatrix.needsUpdate=rocks.instanceColor.needsUpdate=true;
-  w.finds.forEach(syncFind);
+  w.finds.forEach(f=>{f.seen=f.out||f.held||f.done?1:0;syncFind(f,1)});
   const o=s.mo;mowerOwner=o.o;mowerOn=!!o.on;mower.position.set(o.x,w.hAt(o.x,o.z),o.z);mower.rotation.y=o.ry;mowerTarget={x:o.x,z:o.z,ry:o.ry};
   dayT=s.day;Prog={bank:s.prog.bank,up:Object.assign({},s.prog.up)};hudPts();
-  s.gl.forEach((a,i)=>{if(a)glPlace(i,a[0],a[1],a[2]>=0?a[2]:null);else if(GS[i])glPick(i)});glOn=!!s.glon;glK=glOn?1:0}
+  s.gl.forEach((a,i)=>{if(a)glPlace(i,a[0],a[1],a[2]>=0?a[2]:null);else if(GS[i])glPick(i)});glOn=!!s.glon;glK=glOn?1:0;pumpOn=!!s.pon}
 
  /* ---- remote players: simple avatar (body, head, the real shovel) with an interpolated pose ---- */
  function tagTex(t,c){const cv=document.createElement('canvas');cv.width=256;cv.height=64;const x=cv.getContext('2d');let sz=34;x.font='bold '+sz+'px Georgia,serif';while(sz>16&&x.measureText(t).width>230)x.font='bold '+(sz-=2)+'px Georgia,serif';x.textAlign='center';x.textBaseline='middle';
@@ -155,7 +158,7 @@ const Net=(()=>{
   arms.forEach(a=>g.add(a.up,a.lo,a.jt,a.hd));
   pivot.position.set(.45,-.62,-.3);const shovel=sh.children[0].clone();pivot.add(shovel);neck.add(pivot);g.add(neck);
   const tag=new THREE.Sprite(new THREE.SpriteMaterial({map:tagTex(who(id),col),transparent:true,fog:false,depthWrite:false}));tag.scale.set(1.3,.325,1);tag.position.y=2.25;g.add(tag);
-  scene.add(g);return rem[id]={g,neck,pivot,shovel,tag,lamp,beam,legs,arms,mats:[shirt,capm],first:1,x:0,y:0,z:0,yaw:0,pitch:0,tx:0,ty:0,tz:0,tyaw:0,tpitch:0,swing:0,ph:0,amp:0,mode:'shovel',hk:'',hm:null}}
+  scene.add(g);return rem[id]={g,neck,pivot,shovel,tag,lamp,beam,legs,arms,mats:[shirt,capm],first:1,x:0,y:0,z:0,yaw:0,pitch:0,tx:0,ty:0,tz:0,tyaw:0,tpitch:0,swT:-1,swP:[0,0,0],ph:0,amp:0,mode:'shovel',hk:'',hm:null}}
  function removeRemote(id){const r=rem[id];if(!r)return;hold(r,-1,-1,false);scene.remove(r.g);r.tag.material.map.dispose();r.tag.material.dispose();r.mats.forEach(m=>m.dispose());delete rem[id]}
  const _a=new THREE.Vector3(),_b=new THREE.Vector3(),_c=new THREE.Vector3();
  function seg(m,a,b){_c.subVectors(b,a);const l=_c.length()||1e-3;m.position.copy(a);m.quaternion.setFromUnitVectors(UP,_c.divideScalar(l));m.scale.set(1,l,1)}
@@ -187,7 +190,7 @@ const Net=(()=>{
    r.legs[0].rotation.x=Math.sin(r.ph)*r.amp;r.legs[1].rotation.x=-Math.sin(r.ph)*r.amp;
    let d=r.tyaw-r.yaw;d-=Math.round(d/6.2832)*6.2832;r.yaw+=d*k;r.pitch+=(r.tpitch-r.pitch)*k;
    r.y+=(r.ty-r.y)*k;const g=world.floorAt(r.x,r.z,r.y);r.g.position.set(r.x,r.y>g+.2?r.y:g,r.z);r.g.rotation.y=r.yaw;r.neck.rotation.x=r.pitch;
-   r.swing=Math.max(0,r.swing-dt*1.5);const sw=r.swing>0?Math.sin((1-r.swing)*Math.PI):0;r.pivot.position.set(.45,-.62-sw*.08,-.3-sw*.12);r.pivot.rotation.set(-sw*.7,sw*.1,sw*.05);
+   if(r.swT>=0&&(r.swT+=dt)>=SWK[4][0])r.swT=-1;const sw=swingAt(r.swT,r.swP);r.pivot.position.set(.45,-.62+sw[0],-.3+sw[1]);r.pivot.rotation.set(sw[2],-sw[2]*.12,-sw[2]*.06);
    if(r.hm&&r.hm.userData.own)r.hm.rotation.y=T*.4;else if(r.hm)r.hm.rotation.y=T*.6;
    poseArms(r)}}
 
