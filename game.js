@@ -37,8 +37,6 @@ function setShop(v){const was=shopOpen;shopOpen=v;$('shop').style.display=v?'blo
  if(v){renderShop();if(document.pointerLockElement===cv)document.exitPointerLock()}
  else if(was&&state==='play'&&!paused&&!fallback)armLock()}
 $('shopList').addEventListener('click',e=>{const li=e.target.closest('li');if(!li||!shopOpen)return;const id=li.dataset.id,c=upCost(id);if(c===Infinity)toast(`${UPG[id].n} is maxed out`);else if(c>Prog.bank)toast(`Need ${c} points for ${UPG[id].n}`);else Net.send({type:'buy',id,by:ME})});
-/* testing helper: in the console, addPoints(n) adds n points. Only on localhost / file:// or with ?dev in the URL */
-const DEV=/^(localhost|127\.0\.0\.1|\[::1\]|)$/.test(location.hostname)||/[?&]dev\b/.test(location.search);
 function toolScale(){if(shBlade)shBlade.scale.setScalar(1+.08*(Prog.up.shovel|0));if(pkHead)pkHead.scale.setScalar(1+.08*Math.max(0,(Prog.up.pick|0)-1))}
 function hudPts(){$('sc').textContent=Prog.bank;if(shopOpen)renderShop();hbShow();toolScale()}
 class World{
@@ -655,7 +653,7 @@ const hp=new THREE.Group(),hf=new THREE.Group(),hl=new THREE.Group(),pk=new THRE
  const pdir=new V3(.45,-.25,.86).normalize(),pn=new V3(-.25,1,.2);pn.addScaledVector(pdir,-pn.dot(pdir)).normalize();
  pick.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new V3().crossVectors(pdir,pn).normalize(),pdir,pn));
  pick.position.copy(pdir).multiplyScalar(-1.2);pk.add(pick);
- /* dev-only bore: a fat drill. Slot 6, only when ?dev or localhost */
+ /* dev-only bore: a fat drill. Slot 6, only on a local host with dev: true in config.js */
  su.add(M(new THREE.CylinderGeometry(.07,.09,.55,10),yel,0,-.15),M(new THREE.ConeGeometry(.16,.32,8).rotateX(Math.PI),yel,0,-.55),fist());
  for(const g of[hp,hf,hl,pk,su]){g.traverse(o=>{if(o.isMesh)o.castShadow=false});g.visible=false;VM.add(g)}}
 const HB=[
@@ -1392,8 +1390,8 @@ addEventListener('mouseup',e=>{if(e.button!==0)return;if(dragging&&moved<6&&!aut
 addEventListener('blur',()=>{holding=dragging=false});
 document.addEventListener('pointerlockchange',()=>{locked=document.pointerLockElement===cv;if(!locked&&state==='play'&&!fallback&&!shopOpen&&!bookOpen&&!setOpen&&!taskOpen&&!relock){holding=false;paused=true;setShop(false);show('pause')}});
 /* yard-size selector (menu, co-op lobby, win): one shared choice, remembered */
-window.addPoints=n=>Net.send({type:'bank_add',n:n|0,by:ME});/* console only; the host accepts it on localhost or with ?dev */
-window.setWeather=name=>{if(!DEV){console.warn('setWeather only works on localhost or with ?dev');return}const n=String(name||'auto').toLowerCase();
+window.addPoints=n=>{if(!DEV){console.warn('addPoints only works on a local host with dev: true in config.js');return}Net.send({type:'bank_add',n:n|0,by:ME})};
+window.setWeather=name=>{if(!DEV){console.warn('setWeather only works on a local host with dev: true in config.js');return}const n=String(name||'auto').toLowerCase();
  if(n==='auto'||n==='cycle'){weatherHold=null;console.log('weather: auto');return}
  if(n==='clear'||n==='cloud'||n==='cloudy'||n==='rain'){weatherHold=n==='cloudy'?'cloud':n;console.log('weather: '+weatherHold);return}
  console.log('setWeather("clear" | "cloud" | "rain" | "auto")')};

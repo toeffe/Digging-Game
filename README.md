@@ -20,7 +20,7 @@ A first-person digging game in the browser (three.js r128, no build step). Somet
 | E at the workbench | Open the shop; click an upgrade to buy it (walk away or press E to close) |
 | G | Place a garden light where you aim (or pick up the one nearby) |
 | T | Place a ladder where you aim, or pick up the one you are aiming at |
-| V | Fly, only on localhost or with `?dev`. Space rises, Ctrl descends |
+| V | Fly, only on a local host while `dev` is true in `config.js`. Space rises, Ctrl descends |
 | E at the wall socket | Switch the garden lights on / off |
 | E at a cut cable | Splice it (aim at the break). Shovels and a running mower cut cables |
 | L | Flashlight (needs the Flashlight upgrade) |
@@ -61,10 +61,11 @@ Menu > Co-op multiplayer. Set your name (up to 12 characters; it is remembered),
 
 Serve the folder over HTTP, for example `python -m http.server`, then open `http://localhost:8000`.
 
-On localhost or with `?dev` in the URL, press V to fly and hotbar slot 6 is a Super tool that bores a wide hole through dirt and stone. The console commands are `addPoints(n)` and `setWeather("clear")`, `setWeather("cloud")`, `setWeather("rain")`, or `setWeather("auto")`. There is no key for them. `setWeather` only changes the sky on your machine.
+Dev tools turn on only when the page is opened from this machine and `dev` is `true` in `config.js`. Set `dev` to `false` for a normal game on a local server. The public site ignores `?dev`. With the tools on, press V to fly and hotbar slot 6 is a Super tool that bores a wide hole through dirt and stone. The console commands are `addPoints(n)` and `setWeather("clear")`, `setWeather("cloud")`, `setWeather("rain")`, or `setWeather("auto")`. There is no key for them. `setWeather` only changes the sky on your machine.
 
 ## Files
 
+- `config.js`: `dev` switch for local testing tools
 - `index.html`: page markup and screens
 - `style.css`: styles
 - `game.js`: game code
